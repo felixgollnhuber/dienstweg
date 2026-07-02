@@ -173,7 +173,11 @@ export function mergeSettings(root) {
   const settingsPath = join(root, ".claude", "settings.json");
   let settings = {};
   if (existsSync(settingsPath)) {
-    settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+    } catch {
+      return "settings.json: NOT valid JSON - branch-guard hook was NOT wired; fix the file and re-run `npx dienstweg update`";
+    }
   }
   settings.hooks ??= {};
   settings.hooks.PreToolUse ??= [];
