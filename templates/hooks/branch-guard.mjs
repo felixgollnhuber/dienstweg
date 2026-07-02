@@ -126,8 +126,12 @@ if (forcePushMatch) {
 }
 
 // Rule 5: direct push to protected branches - integration happens via PR.
-const directPushMatch = inspectable.match(new RegExp(`\\bgit\\s+push\\s+\\S+\\s+(${protectedAlt})\\b`));
-if (directPushMatch && !/HEAD:/.test(inspectable)) {
+// Covers both plain pushes (`git push origin main`) and refspec pushes
+// (`git push origin HEAD:main`, `git push origin :main` = remote delete).
+const directPushMatch =
+  inspectable.match(new RegExp(`\\bgit\\s+push\\s+\\S+\\s+(${protectedAlt})\\b`)) ||
+  inspectable.match(new RegExp(`\\bgit\\s+push\\b[\\s\\S]*?:(${protectedAlt})\\b`));
+if (directPushMatch) {
   block(`Direct push to '${directPushMatch[1]}' is forbidden. Integration happens via PR (base ${prBase}).`);
 }
 
