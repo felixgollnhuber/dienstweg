@@ -193,9 +193,31 @@ export function ensureLocalRules(root) {
 
 const HOOK_COMMAND = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/branch-guard.mjs"';
 
+// True if the branch-guard is already wired in either settings file. Used so
+// that wiring present in settings.local.json does not cause a duplicate append
+// into settings.json.
+export function hookWiredIn(root) {
+  for (const name of ["settings.json", "settings.local.json"]) {
+    const p = join(root, ".claude", name);
+    if (!existsSync(p)) continue;
+    try {
+      const pre = JSON.parse(readFileSync(p, "utf8"))?.hooks?.PreToolUse;
+      if (Array.isArray(pre) && pre.some((e) => (e?.hooks || []).some((h) => (h?.command || "").includes("branch-guard.mjs")))) {
+        return name;
+      }
+    } catch {
+      // A malformed file cannot wire the hook; check reports it separately.
+    }
+  }
+  return null;
+}
+
 // Merges the branch-guard hook entry into .claude/settings.json without
 // touching unrelated settings or existing hooks.
 export function mergeSettings(root) {
+  const wiredIn = hookWiredIn(root);
+  if (wiredIn) return `settings: branch-guard hook already wired (${wiredIn})`;
+
   const settingsPath = join(root, ".claude", "settings.json");
   let settings = {};
   if (existsSync(settingsPath)) {
@@ -210,18 +232,12 @@ export function mergeSettings(root) {
   if (!Array.isArray(settings.hooks.PreToolUse)) {
     return "settings.json: hooks.PreToolUse is not an array - branch-guard hook was NOT wired; fix the file and re-run `dienstweg update`";
   }
-  const already = settings.hooks.PreToolUse.some((entry) =>
-    (entry?.hooks || []).some((h) => (h?.command || "").includes("branch-guard.mjs")),
-  );
-  if (!already) {
-    settings.hooks.PreToolUse.push({
-      matcher: "Bash",
-      hooks: [{ type: "command", command: HOOK_COMMAND }],
-    });
-    writeFileEnsuringDir(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-    return "settings.json: added branch-guard PreToolUse hook";
-  }
-  return "settings.json: branch-guard hook already wired";
+  settings.hooks.PreToolUse.push({
+    matcher: "Bash",
+    hooks: [{ type: "command", command: HOOK_COMMAND }],
+  });
+  writeFileEnsuringDir(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+  return "settings.json: added branch-guard PreToolUse hook";
 }
 
 export { STATE_DIR };

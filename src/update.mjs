@@ -33,18 +33,23 @@ export function runUpdate(root, flags) {
     );
   }
 
+  // A missing/zero stamp means the config predates schema tracking (or a merge
+  // dropped the field); treat it as the initial schema, which needs no migration.
+  const startVersion = config.schemaVersion || 1;
+
   // Config schema migrations run first so generators see the current shape.
   const pending = migrations
-    .filter((m) => m.toSchemaVersion > (config.schemaVersion ?? 0))
+    .filter((m) => m.toSchemaVersion > startVersion)
     .sort((a, b) => a.toSchemaVersion - b.toSchemaVersion);
+  config.schemaVersion = startVersion;
   for (const migration of pending) {
     migration.migrate(config);
     config.schemaVersion = migration.toSchemaVersion;
     console.log(`migrated config to schema v${migration.toSchemaVersion}: ${migration.description}`);
   }
-  if ((config.schemaVersion ?? 0) !== CURRENT_SCHEMA_VERSION) {
+  if (config.schemaVersion !== CURRENT_SCHEMA_VERSION) {
     throw new Error(
-      `no migration path to schema v${CURRENT_SCHEMA_VERSION} from v${config.schemaVersion ?? 0} - this is a dienstweg bug (missing migration).`,
+      `no migration path to schema v${CURRENT_SCHEMA_VERSION} from v${startVersion} - this is a dienstweg bug (missing migration).`,
     );
   }
 

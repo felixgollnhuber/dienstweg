@@ -1,6 +1,6 @@
 {
   "name": "dienstweg",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Config-driven task workflow framework for agent-assisted development (Claude Code + Linear + GitHub). Immer schoen den Dienstweg einhalten.",
   "type": "module",
   "bin": {
