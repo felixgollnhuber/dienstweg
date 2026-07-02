@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.3 (2026-07-02)
+
+Re-review round 3 (final; 0 critical). Fixed the two remaining broken-recovery-path bugs; the rest were nitpicks and are parked.
+
+- `update` no longer dead-ends on a corrupt `.dienstweg/manifest.json`. The manifest is disposable, regenerable state, so a parse failure is now treated as absent (regenerate from scratch) instead of throwing - which had contradicted `check`'s own "run `dienstweg update` to regenerate" advice.
+- `update` (and `init`) now exit non-zero and print a WARN when a malformed `.claude/settings.json` prevented the branch-guard from being wired, instead of reporting a clean success with the "NOT wired" line buried in normal output (a CI wrapper would otherwise treat an inert guard as success). `mergeSettings` returns `{ wired, message }`.
+
+Parked (guardrail-scope nitpicks, tracked for a future pass): equals-bundled push flags with a sole branch token (`git push --repo=origin main`); a `:dst` delete refspec reported with the generic "Direct push" message; partial-write ordering when AGENTS.md markers are corrupt (recoverable); cosmetic empty-config rendering of the Extra DoD line.
+
 ## v0.1.2 (2026-07-02)
 
 Second hardening pass after re-review round 2 (0 critical; consensus + real completeness findings).
