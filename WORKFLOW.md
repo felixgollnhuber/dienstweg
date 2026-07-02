@@ -1,153 +1,112 @@
-# Task-Workflow-Framework
+# The dienstweg workflow
 
-Generisches Framework fuer agentengestuetzte Entwicklung mit Claude Code, Linear und GitHub. Alle projektspezifischen Werte sind `{{PLATZHALTER}}` - siehe Sektion "Adoption" am Ende.
+Generic task workflow for agent-assisted development with Claude Code, Linear and GitHub. Project values come from `dienstweg.config.json` (written by `dienstweg init`); the commands and the hook read that config at runtime. This document describes the workflow itself - the rules an agent follows in an adopting repo are rendered into the repo's AGENTS.md block and the two commands.
 
-## 1. Prinzipien
+## 1. Principles
 
-1. **Issue = Single Source of Truth.** Jeder Task ist ein Linear-Issue (`{{ISSUE_PREFIX}}-XXX`) mit vollstaendiger Description (Plan, AC, DoD, Setup, Final Summary). Kein lokales Backlog-File, kein Task-Wissen nur im Chat.
-2. **Plan vor Code.** Kein Implementierungs-Commit, bevor der Plan im Issue steht und freigegeben ist. Non-negotiable.
-3. **Messbare Gates statt Bauchgefuehl.** Build-/Test-Kommandos mit Exit-Code 0, abgehakte Checkboxen, existierende PRs - keine Bedingungen wie "Code ist sauber".
-4. **Redundantes Review.** 3 unabhaengige Review-Subagents mit identischem, breitem Scope. Der Wert liegt im Ensemble: Konsens = hohe Prioritaet, Singleton = kritisch pruefen, Konflikte = explizit entscheiden.
-5. **Autonomer Merge mit harten Gates.** Ist der Review-Loop sauber abgeschlossen, wird ohne Rueckfrage gemergt - aber nur, wenn ALLE Gates gruen sind. Ein User-Override ("merge nicht automatisch") gilt fuer die ganze Session.
-6. **Maschinelle Regel-Durchsetzung.** Git-Konventionen werden nicht nur dokumentiert, sondern per PreToolUse-Hook (branch-guard) erzwungen.
-7. **Scope-Disziplin.** Scope-Erweiterungen nie stillschweigend - User fragen oder Folge-Issue anlegen.
+1. **Issue = single source of truth.** Every task is a Linear issue (`<prefix>-XXX`) with a complete description (Plan, AC, DoD, Setup, Final Summary). No local backlog files, no task knowledge that only lives in a chat.
+2. **Plan before code.** No implementation commit before the plan is in the issue and approved. Non-negotiable.
+3. **Measurable gates instead of gut feeling.** Build/test commands with exit code 0, checked-off boxes, existing PRs - never conditions like "the code is clean".
+4. **Redundant review.** N independent review subagents (default 3) with an identical, broad scope. The value is the ensemble: consensus = high priority, singletons = judge critically, conflicts = decide explicitly.
+5. **Autonomous merge with hard gates.** After a clean review loop, merge without asking - but only when ALL gates are green. A user override ("do not merge automatically") holds for the whole session.
+6. **Machine-enforced rules.** Git conventions are not just documented; the branch-guard PreToolUse hook blocks violations.
+7. **Scope discipline.** Never widen scope silently - ask the user or create a follow-up issue.
 
-## 2. Issue-Schema (Description-Template, Pflicht fuer jedes Issue)
+## 2. Issue schema
+
+Every issue description follows this template (rendered with concrete values by the commands):
 
 ```markdown
 ## Plan
-<vor Code-Arbeit gesetzt, via /start-task>
+<set before code work, via /start-task>
 
 ## Acceptance Criteria
 - [ ] AC #1
-- [ ] AC #2
 
 ## Definition of Done
-- [ ] {{BUILD_CHECKS}} exit 0
-- [ ] Acceptance Criteria erfuellt + abgehakt
-- [ ] Keine unautorisierten Side-Effects (Cronjobs/Webhooks/destruktive Skripte)
-- [ ] High-Risk-Bereiche ({{HIGH_RISK_AREAS}}) verifiziert
-- [ ] Keine Secrets im Code
-- [ ] Single-Writer-Lock geprueft (parallel-safe oder Lock-frei zur Merge-Zeit)
-- [ ] 3-fach-Ensemble-Review durchgefuehrt
-- [ ] PR-Base = {{BASE_BRANCH}}
-{{PROJECT_EXTRA_DOD}}
+- [ ] <gates.build> exit 0
+- [ ] Acceptance criteria fulfilled + checked off
+- [ ] No unauthorized side effects (cronjobs/webhooks/destructive scripts)
+- [ ] High-risk areas (<areas.highRisk>) verified
+- [ ] No secrets in the code
+- [ ] Single-writer lock checked (parallel-safe or lock-free at merge time)
+- [ ] <review.ensembleSize>x ensemble review executed
+- [ ] PR base = <git.baseBranch>
+<+ one line per extraDoD entry>
 
 ## Setup
-- Worktree: <wird in /start-task gesetzt>
-- Single-Writer-Lock: <parallel-safe | single-writer:<bereich>>
+- Worktree: <set by /start-task>
+- Single-writer lock: <parallel-safe | single-writer:<area>>
 
 ## Final Summary
-<vor State=Done gesetzt: Merge-SHA, PR-Nummer, Review-Runden, Folge-Issues>
+<set before state=Done: merge SHA, PR number, review rounds, follow-up issues>
 ```
 
-## 3. Git-Konventionen
+## 3. Git conventions
 
-- Base-Branch fuer alle PRs: `{{BASE_BRANCH}}`. Direkte Pushes auf protected Branches sind verboten (Guard-Hook).
-- Feature-Branch: `tasks/{{issue_prefix_lower}}-XXX-<kurz-slug>` (Issue-Identifier kleingeschrieben, Slug aus dem Titel, kebab-case).
-- Commit: `{{ISSUE_PREFIX}}-XXX - Kurzbeschreibung`.
-- PR-Titel: `{{ISSUE_PREFIX}}-XXX - Task-Titel`, PR-Base immer `{{BASE_BRANCH}}` (explizit setzen).
-- Merge: `gh pr merge <N> --squash --delete-branch`.
-- Reine Tooling-/Infra-Aenderungen ohne Issue duerfen einen `tasks/<kurz-slug>`-Branch ohne Prefix nutzen; sobald ein Issue existiert, gilt das Prefix-Schema.
-- Kein `git commit --no-verify`, kein Force-Push auf shared Branches (Guard-Hook blockt beides).
+- Base branch for all PRs: `git.baseBranch`. Direct pushes to protected branches are blocked by the hook.
+- Feature branches: `tasks/<prefix-lower>-XXX-<short-slug>`; commits `<PREFIX>-XXX - short description`; PR titles `<PREFIX>-XXX - task title` with an explicit `--base`.
+- Merge: `gh pr merge <N> --squash --delete-branch`, then mandatory `git checkout <base> && git pull --ff-only` (otherwise the next `/start-task` branches off a stale base).
+- Tooling/infra changes without an issue may use a `tasks/<short-slug>` branch without prefix.
 
-## 4. Parallelitaets-Labels
+## 4. Parallelism labels
 
-Pro Issue genau eines:
+Exactly one per issue: `parallel-safe` (touches no hot area) or `single-writer:<area>` (exclusive lock on one of `areas.singleWriter`). Before starting, check for other `In Progress` issues holding the same lock. When unsure, prefer `single-writer` over a wrong `parallel-safe`.
 
-- `parallel-safe` - kollidiert mit nichts, kann jederzeit parallel laufen.
-- `single-writer:<bereich>` - exklusiver Lock auf einen Hot-Bereich ({{SINGLE_WRITER_AREAS}}). Vor Start pruefen: `list_issues label="single-writer:<bereich>" state="In Progress"` - bei Treffer warten oder User fragen.
+## 5. Task lifecycle
 
-Im Zweifel `single-writer:<bereich>` setzen statt faelschlich `parallel-safe`.
+1. Claim: `save_issue state="In Progress" assignee="me"`.
+2. Plan BEFORE code into the description (`## Plan`), structured via `/start-task`.
+3. During work: check off AC boxes via description patches, add notes as comments, update the plan as needed.
+4. Scope changes: ask or create a follow-up issue - never silently.
+5. Backlog discipline BEFORE the merge (otherwise lost, `--delete-branch` removes the branch): all AC + DoD boxes checked, `## Final Summary` with merge-SHA placeholder + PR number, `state="In Review"` - as the last commit on the feature branch.
+6. Ensemble review (section 6) including direct fixes and re-review rounds.
+7. Auto-merge (section 7) including the post-merge sync step.
+8. Close out: `state="Done"` + finalize `## Final Summary` (real merge SHA, review rounds, follow-up issues).
 
-## 5. Task-Lifecycle
+## 6. Ensemble review (mandatory before every merge)
 
-1. **Issue-Claim**: `save_issue id="{{ISSUE_PREFIX}}-XXX" state="In Progress" assignee="me"`.
-2. **Plan VOR Code** in die Issue-Description (Sektion `## Plan`) via `save_issue`. Erfolgt strukturiert durch `/start-task`.
-3. **Waehrend der Arbeit**: AC-Checkboxen via Description-Patch abhaken; Notes als Comments (`save_comment`); Plan-Updates via erneutem `save_issue`.
-4. **Scope-Erweiterungen**: User fragen oder Folge-Issue anlegen - nie stillschweigend.
-5. **Backlog-Disziplin VOR dem Merge** (sonst geht der Update verloren, weil `--delete-branch` den Branch loescht): alle AC- und DoD-Boxen abhaken, `## Final Summary` mit Merge-SHA-Platzhalter + PR-Nummer schreiben, `state="In Review"` setzen. Diese Aenderungen als letzter Commit auf dem Feature-Branch.
-6. **3-fach-Ensemble-Review** (Sektion 6) inkl. direkter Fix-Umsetzung und ggf. Re-Review-Runden.
-7. **Auto-Merge** (Sektion 7) inkl. Pflicht-Schritt Post-Merge-Sync.
-8. **Abschluss**: `save_issue state="Done"` + `## Final Summary` finalisieren (echte Merge-SHA, Review-Runden, Folge-Issues).
+- Launch `review.ensembleSize` (default 3) review subagents **in one message** (true parallelism). Use `review.subagentType` if the repo defines it, otherwise `general-purpose`.
+- **No scope splitting** - every reviewer covers the full PR broadly (code quality, bugs, logic, conventions, tests, edge cases, error handling, security, high-risk areas, performance). Deliberately redundant.
+- Each subagent gets PR number + branch + worktree path + an identical prompt; output: structured report (Critical / Important / Suggestions / Strengths) with `file:line` references.
+- **Synthesis by the main agent**: consensus findings (>=2 reviewers) are fixed directly; singletons are judged critically (real issues get fixed too); conflicts are decided explicitly, never silently averaged.
+- Fixes land as follow-up commits on the same branch; larger refactors become follow-up issues.
+- **Re-review** (full ensemble again) when the fixes constitute a larger change - any of: new logic (function/class/route/migration), a high-risk area touched, >50 net LOC since the last review, >3 files not in the original diff, public interface changes. Cosmetics (typos, imports, formatting) do not trigger it. When in doubt: re-review. Max `review.maxRounds` rounds, then park the rest as a follow-up issue.
+- Note each round in the Final Summary: "re-review round N (trigger: <reason>), findings: <count>".
+- Reviewer hygiene: parallel reviewers in the same worktree can leave artifacts - check `git status` after the review and restore foreign files before making fix commits.
+- "Merge-ready" without the ensemble (including required re-review rounds) or without applying directly fixable findings counts as unfinished work.
 
-## 6. 3-fach-Ensemble-Review (Pflicht vor jedem Merge)
+## 7. Auto-merge
 
-- **3 parallele Review-Subagents** in EINER Message starten (echte Parallelitaet). `subagent_type=ensemble-reviewer`, falls im Projekt definiert; Fallback `general-purpose`.
-- **Kein Scope-Split**: alle 3 reviewen den vollstaendigen PR mit demselben breiten Scope (Code-Quality, Bugs, Logik, Konventionen, Tests, Edge-Cases, Error-Handling, Security, High-Risk-Bereiche, Performance). Absichtlich redundant.
-- Jeder Subagent bekommt PR-Nummer + Branch + Worktree-Pfad + identischen Prompt; Output: strukturierter Report (Critical / Important / Suggestions / Strengths) mit `file:line`-Referenzen.
-- **Synthese durch den Main-Agent**: Konsens-Findings (>=2 Agents) direkt fixen; Singletons kritisch bewerten (echtes Issue trotzdem fixen); Konflikte explizit ausweisen und entscheiden, nicht stillschweigend mitteln.
-- **Fixes als Folge-Commits** auf demselben Branch. Groessere Refactors/Scope-Erweiterungen als Folge-Issue.
-- **Re-Review-Pflicht** bei groesseren Fix-Aenderungen, komplett neu, bis eine Runde ohne groessere Folge-Aenderungen endet (max. 3 Runden, danach Folge-Issue fuer Offenes). Schwellwert (oder-verknuepft): neue Logik (Funktion/Klasse/Route/Migration), Aenderung in High-Risk-Bereichen ({{HIGH_RISK_AREAS}}), >50 LOC netto seit letztem Review, >3 neue Dateien ausserhalb des Original-Diffs, Aenderung an oeffentlichen Interfaces. Reine Kosmetik (Typos, Imports, Formatting) loest kein Re-Review aus. Im Zweifel: re-reviewen.
-- Pro Re-Review-Runde im Final Summary vermerken: "Re-Review-Runde N (Trigger: <grund>), Findings: <count>".
-- "Merge-ready" ohne Ensemble-Review oder ohne Umsetzung direkt fixbarer Findings zaehlt als unvollstaendige Arbeit. Ein einzelner Review-Aufruf ersetzt das Ensemble nicht.
-- Hinweis Worktree-Hygiene: parallele Reviewer im selben Worktree koennen Artefakte hinterlassen - nach dem Review `git status` pruefen, Fremd-Dateien via `git checkout HEAD -- <files>` entfernen, bevor Fix-Commits entstehen.
-
-## 7. Auto-Merge (Default) + Gates
-
-Ist der Review-Loop sauber abgeschlossen, wird **autonom gemergt** - kein "Soll ich mergen?". Befehl: `gh pr merge <N> --squash --delete-branch`. Output mit Merge-SHA + PR-URL.
-
-**Pflicht-Schritt direkt nach erfolgreichem Merge** (nie ueberspringen):
+After a clean review loop the agent merges autonomously: `gh pr merge <N> --squash --delete-branch`, reporting merge SHA + PR URL. Then, never skipped:
 
 ```
-git checkout {{BASE_BRANCH}} && git pull --ff-only
+git checkout <git.baseBranch> && git pull --ff-only
 ```
 
-Begruendung: der lokale Base-Branch muss nach jedem Merge auf den neuen HEAD, sonst startet das naechste `/start-task` auf veraltetem Stand. Pull-Erfolg (neuer HEAD-SHA) in einer User-Message bestaetigen, bevor `state="Done"` gesetzt wird.
+and confirm the new HEAD to the user before setting `state="Done"`.
 
-**Auto-Merge-Gates** (alle muessen erfuellt sein):
+Gates (all must hold, otherwise report instead of merging):
 
-- PR-Base ist `{{BASE_BRANCH}}`.
-- {{BUILD_CHECKS}} exit 0 nach den letzten Fix-Commits (Exit-Code direkt pruefen, nicht durch Pipes maskieren).
-- **DoD-Gate**: vor Merge per `get_issue` die Description ziehen und auf offene `- [ ]`-Boxen in `## Definition of Done` pruefen. Offene Boxen -> kein Auto-Merge, klare Meldung an den User.
-- Letzte Review-Runde ohne offene [3/3]- oder [2/3]-Critical-Findings.
-- Re-Review-Loop abgeschlossen (oder Max-3-Runden erreicht und Rest als Folge-Issue ausgewiesen).
-- Kein User-Override aktiv ("merge nicht automatisch", "ich review selbst" o.ae. - gilt fuer die ganze Session).
+- PR base is `git.baseBranch`.
+- `gates.build` exits 0 after the last fix commits (check the exit code directly, do not mask it with pipes).
+- DoD gate: `get_issue` before the merge; any unchecked `- [ ]` box in `## Definition of Done` blocks the merge.
+- No open majority critical findings from the last review round.
+- Re-review loop finished (or max rounds reached with the rest parked as a follow-up issue).
+- No user override active.
 
-Bei verletztem Gate: NICHT mergen, Status-Report mit Begruendung und Vorschlag (manueller Review, Folge-Issue, etc.).
+## 8. The /goal loop
 
-## 8. /goal-Condition-Schema
+`/start-task` ends with a ready-to-send `/goal` condition containing measurable end states: plan implemented, gates exit 0, AC boxes checked, PR created, ensemble review + synthesis done, DoD boxes + Final Summary + In Review set before the merge, auto-merge only with green gates, post-merge base sync confirmed, and `state="Done"` as the final step. Constraints forbid `--no-verify`, hook bypasses, pushes to protected branches, force pushes, files outside the plan's touch points, plus everything in `extraConstraints`. High-risk issues add smaller commits + intermediate verification; single-writer issues add the lock constraint. Bounded at 40 turns.
 
-`/start-task` endet mit einer copy-paste-fertigen `/goal`-Condition. Der `/goal`-Loop (Claude Code v2.1.139+) prueft nach jedem Turn per Kleinmodell, ob die Condition erfuellt ist - sie braucht daher **messbare, im Transkript pruefbare End-Bedingungen**. Schema (Single-Line, auf Projektsprache):
+## 9. Versioning and updates
 
-```
-/goal {{ISSUE_PREFIX}}-XXX Plan komplett umgesetzt: alle Implementation-Schritte aus dem ## Plan-Block der Issue-Description erledigt, {{BUILD_CHECKS}} exit 0, alle Acceptance-Criteria-Boxen via save_issue auf `- [x]` getoggelt, PR gegen {{BASE_BRANCH}} erstellt (Titel: "{{ISSUE_PREFIX}}-XXX - <titel>"), 3-fach-Ensemble-Review (3 parallele Review-Subagents in EINER message, broad scope) ausgefuehrt mit Konsens-Synthese und Folge-Commits fuer Konsens-Findings, Re-Review-Loop bei groesseren Aenderungen (Schwellwert: neue Logik / High-Risk / >50 LOC / >3 neue Files / Interface-Change, max 3 Runden), VOR `gh pr merge` alle DoD-Boxen via save_issue auf `- [x]` getoggelt und ## Final Summary mit Merge-SHA-Platzhalter + PR-Nummer gesetzt sowie state="In Review", Auto-Merge via `gh pr merge <N> --squash --delete-branch` nur wenn alle Gates gruen (Base={{BASE_BRANCH}}, Build exit 0, DoD-Boxen abgehakt, keine offenen [3/3]/[2/3]-Critical-Findings, Re-Review-Loop abgeschlossen, kein User-Override), PFLICHT-SCHRITT nach erfolgreichem Merge: `git checkout {{BASE_BRANCH}} && git pull --ff-only` ausfuehren und in einer User-Message den neuen HEAD bestaetigen, ALS LETZTER SCHRITT VOR LOOP-EXIT save_issue state="Done" plus description-Patch mit echter Merge-SHA in ## Final Summary. Constraints: kein --no-verify, kein Hook-Bypass, kein Push auf protected Branches, kein Force-Push, {{EXTRA_CONSTRAINTS}}, keine Files ausserhalb der Plan-Touch-Points. Stoppe nach 40 turns falls nicht erfuellt.
-```
+- dienstweg versions are semver git tags on this repo; `package.json` carries the version. Adopting repos stamp it as `dienstwegVersion` in their config.
+- Tool-owned files (commands, hook, AGENTS block) are regenerated by `dienstweg update` - conflict-free because they are never hand-edited. `.dienstweg/manifest.json` stores content hashes; `check` and `update` detect hand-edits (update skips them unless `--force`).
+- Config schema changes ship as migrations (`migrations/index.mjs`, applied in ascending `toSchemaVersion` order during `update`).
+- Project customization happens exclusively in `dienstweg.config.json` (`extraDoD`, `extraConstraints`, `areas`, `gates`, `review`) and `dienstweg.local.md`.
 
-Bei High-Risk-Issues ergaenzen: `kleinere Commits, Zwischen-Verifikation nach jeder destruktiven Datenoperation`. Bei aktivem `single-writer:<bereich>`-Label ergaenzen: `kein paralleler Edit an <bereich>-Hot-Files solange anderes Issue In Progress`.
+## 10. Adoption paths
 
-## 9. Worktrees
-
-- Ein Worktree pro Task: `.claude/worktrees/tasks+{{issue_prefix_lower}}-XXX-<slug>` auf Branch `tasks/{{issue_prefix_lower}}-XXX-<slug>` aus `{{BASE_BRANCH}}`.
-- Anlage: projekteigenes Helper-Script ({{WORKTREE_HELPER}}), falls vorhanden; sonst plain `git worktree add .claude/worktrees/tasks+<...> -b tasks/<...> {{BASE_BRANCH}}` gefolgt von {{SETUP_CMD}}.
-- Pro Worktree maximal ein aktives `/goal`.
-- Cleanup nach Merge: `git worktree remove <pfad>`; Remote-Branch loescht der Merge (`--delete-branch`). Der Fehler "X is already used by worktree" beim --delete-branch ist KEIN Merge-Fehlschlag - Remote-Merge ok, lokal Worktree entfernen und ff-only-Pull im Main-Checkout.
-
-## 10. Adoption
-
-Platzhalter-Tabelle (alle Vorkommen in `templates/` ersetzen):
-
-| Platzhalter | Bedeutung | Beispiel (factotum) |
-|---|---|---|
-| `{{ISSUE_PREFIX}}` | Linear-Team-Key | `FAC` |
-| `{{issue_prefix_lower}}` | Prefix kleingeschrieben (Branches) | `fac` |
-| `{{LINEAR_TEAM}}` | Linear-Team-Name | `Factotum` |
-| `{{DEFAULT_PROJECT}}` | Default-Linear-Project oder `-` (Team-Backlog) | `-` |
-| `{{BASE_BRANCH}}` | PR-Base-Branch | `main` |
-| `{{BUILD_CHECKS}}` | Build-/Test-Gates | `npm run build && npm test` |
-| `{{SETUP_CMD}}` | Worktree-Setup | `npm ci` |
-| `{{WORKTREE_HELPER}}` | Helper-Script oder `-` (plain git worktree) | `-` |
-| `{{HIGH_RISK_AREAS}}` | Bereiche mit verschaerften Gates | siehe factotum |
-| `{{SINGLE_WRITER_AREAS}}` | Bereiche fuer single-writer-Labels | `manifest-format, index-schema, mcp-api, parser` |
-| `{{DEMO_DATA_CMD}}` | destruktives Demo-Daten-Kommando oder `-` | `-` |
-| `{{PROJECT_EXTRA_DOD}}` | zusaetzliche DoD-Zeilen | siehe factotum |
-| `{{EXTRA_CONSTRAINTS}}` | projektspezifische /goal-Constraints | siehe factotum |
-
-Schritte:
-
-1. Linear-Team `{{LINEAR_TEAM}}` anlegen (Key = `{{ISSUE_PREFIX}}`), Labels `parallel-safe` + `single-writer:<bereich>` fuer jede Area aus `{{SINGLE_WRITER_AREAS}}` erstellen.
-2. `templates/commands/*.md` nach `<projekt>/.claude/commands/` kopieren, Platzhalter ersetzen.
-3. `templates/hooks/branch-guard.mjs` nach `<projekt>/.claude/hooks/` kopieren, `CONFIG` anpassen, via `templates/settings-hook-snippet.json` in `.claude/settings.json` verdrahten.
-4. `templates/AGENTS-task-lifecycle.md` (Platzhalter ersetzt) als Sektion in die Projekt-AGENTS.md uebernehmen.
-5. Optional: `ensemble-reviewer`-Subagent unter `.claude/agents/` definieren.
-6. Description-Template (Sektion 2) als Linear-Team-Template hinterlegen (optional, Commands erzwingen es ohnehin).
+- **Fresh repo**: `dienstweg init` -> create the Linear team (key = prefix) with labels `parallel-safe` + `single-writer:<area>` -> `dienstweg check` -> first `/create-issue`.
+- **Existing project**: `dienstweg init` detects it, never overwrites colliding files, and emits the onboarding prompt (`.dienstweg/onboarding-prompt.md`). A coding agent then audits CLAUDE.md/AGENTS.md, CONTRIBUTING, CI workflows, PR templates and pre-existing hooks for contradictions, proposes per-finding resolutions (dienstweg wins / project wins via config / user decides), applies the agreed ones and verifies with `dienstweg check`.
