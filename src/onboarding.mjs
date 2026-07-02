@@ -19,12 +19,16 @@ export function collectFindings(root) {
   if (existsSync(settingsPath)) {
     try {
       const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-      const pre = settings?.hooks?.PreToolUse || [];
-      const foreign = pre.filter(
-        (entry) => !(entry.hooks || []).some((h) => (h.command || "").includes("branch-guard.mjs")),
-      );
-      if (foreign.length) {
-        findings.push(`settings.json has ${foreign.length} pre-existing PreToolUse hook entr${foreign.length === 1 ? "y" : "ies"} - verify they do not conflict with the branch-guard (e.g. duplicate git-rule enforcement with different rules).`);
+      const pre = settings?.hooks?.PreToolUse;
+      if (pre !== undefined && !Array.isArray(pre)) {
+        findings.push("settings.json has hooks.PreToolUse in an unexpected shape (not an array) - the branch-guard hook was NOT wired; fix the file.");
+      } else {
+        const foreign = (pre || []).filter(
+          (entry) => !(entry?.hooks || []).some((h) => (h?.command || "").includes("branch-guard.mjs")),
+        );
+        if (foreign.length) {
+          findings.push(`settings.json has ${foreign.length} pre-existing PreToolUse hook entr${foreign.length === 1 ? "y" : "ies"} - verify they do not conflict with the branch-guard (e.g. duplicate git-rule enforcement with different rules).`);
+        }
       }
     } catch {
       findings.push("settings.json exists but could not be parsed as JSON - fix it manually; the branch-guard hook was NOT wired.");

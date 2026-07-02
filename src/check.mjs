@@ -75,9 +75,13 @@ export function runCheck(root) {
 
   const hookWired = hookIsWired(root);
   if (hookWired === "invalid") {
-    problems.push("settings.json is not valid JSON.");
+    problems.push("branch-guard hook is not wired: a .claude settings file is not valid JSON.");
   } else if (!hookWired) {
     problems.push("branch-guard hook is not wired in .claude/settings.json or .claude/settings.local.json.");
+  } else if (hasInvalidSettingsFile(root)) {
+    // Wired via a valid file, but another settings file is broken - not fatal,
+    // but worth surfacing so a corrupt committed settings.json is not masked.
+    infos.push("a .claude settings file is not valid JSON (the hook is wired via another file) - fix it to avoid surprises.");
   }
 
   const agentsPath = join(root, "AGENTS.md");
@@ -134,4 +138,17 @@ function hookIsWired(root) {
   }
   if (wired) return true;
   return sawInvalid ? "invalid" : false;
+}
+
+function hasInvalidSettingsFile(root) {
+  for (const name of ["settings.json", "settings.local.json"]) {
+    const p = join(root, ".claude", name);
+    if (!existsSync(p)) continue;
+    try {
+      JSON.parse(readFileSync(p, "utf8"));
+    } catch {
+      return true;
+    }
+  }
+  return false;
 }

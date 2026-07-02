@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.2 (2026-07-02)
+
+Second hardening pass after re-review round 2 (0 critical; consensus + real completeness findings).
+
+- `update` no longer dead-ends on a config that merely lost its `schemaVersion` stamp: a missing/zero stamp is treated as the initial schema and repaired, instead of throwing "this is a dienstweg bug". The genuine-missing-migration error is reserved for a real gap between migration versions.
+- `mergeSettings` treats the branch-guard as already wired when it lives in `settings.local.json`, so `init`/`update` no longer append a duplicate entry to `settings.json` (which made the hook run twice).
+- branch-guard: strips shell grouping so `(git push origin main)` and `(cd sub && git push origin main)` are caught; blocks protected-branch deletes/refspecs without an explicit remote (`git push :main`, `git push --delete main`, `git push -d main`); catches the bundled short form `git commit -nm`; and reports `--force-with-lease` accurately instead of calling it `--force`.
+- `collectFindings` no longer throws on a non-array `hooks.PreToolUse` (reports the shape problem instead); value flags reject a following token that is itself a flag (`--name --yes` now errors instead of recording a garbage project name); `check` surfaces an INFO when a settings file is broken but the hook is wired via another; README drops the misleading `npx github:` hint for the currently-private package.
+
 ## v0.1.1 (2026-07-02)
 
 Hardening release after a 3-reviewer ensemble review of v0.1.0.

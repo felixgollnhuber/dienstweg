@@ -78,7 +78,12 @@ function segments(s) {
 }
 
 function tokenize(seg) {
-  return seg.split(/\s+/).filter(Boolean);
+  // Strip surrounding shell grouping so `(git push origin main)` and
+  // `(cd x && git push origin main)` tokenize to bare `git ... main`.
+  return seg
+    .split(/\s+/)
+    .map((t) => t.replace(/^[({]+/, "").replace(/[)}]+$/, ""))
+    .filter(Boolean);
 }
 
 // Returns the argument tokens after a git subcommand, tolerating global options
@@ -178,28 +183,40 @@ for (const seg of segments(prepared)) {
     }
   }
 
-  // Rule 3: git commit --no-verify / -n bypasses hooks and signing.
+  // Rule 3: git commit --no-verify / -n bypasses hooks and signing. Also
+  // catches the bundled short form (`-nm "msg"` == `--no-verify -m msg`).
   const commitArgs = afterGitSub(seg, "commit");
-  if (commitArgs && commitArgs.some((a) => a === "--no-verify" || a === "-n")) {
+  if (
+    commitArgs &&
+    commitArgs.some((a) => a === "--no-verify" || (/^-[a-zA-Z]*n[a-zA-Z]*$/.test(a) && !a.startsWith("--")))
+  ) {
     block(`git commit --no-verify is forbidden unless the user explicitly requested it. If a hook fails, investigate and fix the underlying issue.`);
   }
 
   // Rule 4/5: pushes to protected branches (force = worse, but both blocked).
   const pushArgs = afterGitSub(seg, "push");
   if (pushArgs) {
-    const forceFlag = pushArgs.some(
-      (a) => a === "--force" || a === "-f" || a === "--force-with-lease" || a.startsWith("--force-with-lease="),
-    );
-    const nonFlag = pushArgs.filter((a) => !a.startsWith("-"));
-    const refspecs = nonFlag.slice(1); // first non-flag is the remote
-    const force = forceFlag || refspecs.some((r) => r.startsWith("+"));
-    for (const rs of refspecs) {
-      if (protectedSet.has(refspecDest(rs))) {
-        if (force) {
-          block(`git push --force to '${refspecDest(rs)}' is destructive on a shared branch and requires explicit user authorization.`);
-        }
-        block(`Direct push to '${refspecDest(rs)}' is forbidden. Integration happens via PR (base ${prBase}).`);
-      }
+    const hardForce = pushArgs.some((a) => a === "--force" || a === "-f");
+    const withLease = pushArgs.some((a) => a === "--force-with-lease" || a.startsWith("--force-with-lease="));
+    const isDelete = pushArgs.some((a) => a === "--delete" || a === "-d");
+    const nonFlags = pushArgs.filter((a) => !a.startsWith("-"));
+    // Explicit refspecs carry their own destination regardless of position
+    // (`:main`, `+main`, `HEAD:main`, `main:main`).
+    const explicitRefspecs = nonFlags.filter((a) => a.startsWith("+") || a.includes(":"));
+    // Plain tokens: the first is the remote, the rest are branch refspecs.
+    // With --delete the remote is ambiguous, so treat every plain token as a
+    // candidate branch (a remote literally named for a protected branch is absurd).
+    const plain = nonFlags.filter((a) => !a.startsWith("+") && !a.includes(":"));
+    const branchRefspecs = isDelete ? plain : plain.slice(1);
+    const plusForce = explicitRefspecs.some((a) => a.startsWith("+"));
+    const force = hardForce || withLease || plusForce;
+    const forceLabel = hardForce || plusForce ? "--force" : "--force-with-lease";
+    for (const c of [...explicitRefspecs, ...branchRefspecs]) {
+      const dst = refspecDest(c);
+      if (!protectedSet.has(dst)) continue;
+      if (isDelete) block(`Deleting the protected branch '${dst}' on the remote is forbidden.`);
+      if (force) block(`git push ${forceLabel} to '${dst}' is destructive on a shared branch and requires explicit user authorization.`);
+      block(`Direct push to '${dst}' is forbidden. Integration happens via PR (base ${prBase}).`);
     }
   }
 

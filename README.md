@@ -14,7 +14,7 @@ Clone this repo and put `dienstweg` on your PATH once:
 git clone <dienstweg repo> && cd dienstweg && npm link
 ```
 
-(`npm link` makes the `dienstweg` command global with no dependencies to install. Alternatively run `node /path/to/dienstweg/bin/dienstweg.mjs` directly, or `npx github:<owner>/dienstweg` once it is pushed.)
+(`npm link` makes the `dienstweg` command global with no dependencies to install. Alternatively run `node /path/to/dienstweg/bin/dienstweg.mjs` directly. The package is currently private/unpublished, so there is no `npx dienstweg` from the registry yet.)
 
 ## Adopt
 

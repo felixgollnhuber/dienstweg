@@ -65,7 +65,9 @@ function parseFlags(args, allowed) {
       flags[key] = value;
     } else {
       const value = args[++i];
-      if (value === undefined) throw new Error(`flag ${arg} needs a value`);
+      if (value === undefined || value.startsWith("-")) {
+        throw new Error(`flag ${arg} needs a value (got: ${value ?? "nothing"})`);
+      }
       flags[VALUE_FLAGS[arg]] = value;
     }
   }
