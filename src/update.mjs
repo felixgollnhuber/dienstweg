@@ -60,7 +60,15 @@ export function runUpdate(root, flags) {
     throw new Error(`config is invalid, refusing to regenerate:\n  - ${problems.join("\n  - ")}\nFix ${CONFIG_FILENAME} and re-run.`);
   }
 
-  const previousManifest = loadManifest(root);
+  // The manifest is disposable, fully-regenerable state; a corrupt one must not
+  // dead-end the very command the doctor points at for recovery. Treat it as
+  // absent and regenerate.
+  let previousManifest = null;
+  try {
+    previousManifest = loadManifest(root);
+  } catch {
+    console.log("  NOTE: .dienstweg/manifest.json was unreadable - regenerating it from scratch.");
+  }
   const mode = flags.force ? "overwrite" : "skip";
   const { manifest, skipped } = writeGeneratedFiles(root, previousManifest, mode);
   writeManifest(root, manifest);
@@ -81,7 +89,7 @@ export function runUpdate(root, flags) {
   for (const target of skipped) {
     console.log(`  CONFLICT:    ${target} is hand-edited or unmanaged - left untouched. Move customizations to ${CONFIG_FILENAME} / dienstweg.local.md, then re-run with --force.`);
   }
-  console.log(`  ${settingsAction}`);
+  console.log(`  ${settingsAction.message}`);
   for (const a of agentsActions) console.log(`  ${a}`);
   if (pending.length) {
     console.log(`\nNOTE: ${pending.length} config migration(s) ran - review ${CONFIG_FILENAME} and commit the changes.`);
@@ -89,5 +97,8 @@ export function runUpdate(root, flags) {
   if (skipped.length) {
     console.log(`\nNOTE: version stamp left at v${fromVersion} until the ${skipped.length} conflict(s) are resolved (re-run with --force).`);
   }
-  return skipped.length ? 1 : 0;
+  if (!settingsAction.wired) {
+    console.error(`\nWARN: the branch-guard hook is NOT wired - the git guardrail is inert until you fix .claude/settings.json and re-run.`);
+  }
+  return skipped.length || !settingsAction.wired ? 1 : 0;
 }

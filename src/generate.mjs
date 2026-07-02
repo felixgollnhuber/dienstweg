@@ -213,10 +213,12 @@ export function hookWiredIn(root) {
 }
 
 // Merges the branch-guard hook entry into .claude/settings.json without
-// touching unrelated settings or existing hooks.
+// touching unrelated settings or existing hooks. Returns { wired, message }:
+// `wired` is false when a malformed settings file prevented wiring, so callers
+// can reflect that in their exit code instead of reporting a clean success.
 export function mergeSettings(root) {
   const wiredIn = hookWiredIn(root);
-  if (wiredIn) return `settings: branch-guard hook already wired (${wiredIn})`;
+  if (wiredIn) return { wired: true, message: `settings: branch-guard hook already wired (${wiredIn})` };
 
   const settingsPath = join(root, ".claude", "settings.json");
   let settings = {};
@@ -224,20 +226,20 @@ export function mergeSettings(root) {
     try {
       settings = JSON.parse(readFileSync(settingsPath, "utf8"));
     } catch {
-      return "settings.json: NOT valid JSON - branch-guard hook was NOT wired; fix the file and re-run `dienstweg update`";
+      return { wired: false, message: "settings.json: NOT valid JSON - branch-guard hook was NOT wired; fix the file and re-run `dienstweg update`" };
     }
   }
   settings.hooks ??= {};
   settings.hooks.PreToolUse ??= [];
   if (!Array.isArray(settings.hooks.PreToolUse)) {
-    return "settings.json: hooks.PreToolUse is not an array - branch-guard hook was NOT wired; fix the file and re-run `dienstweg update`";
+    return { wired: false, message: "settings.json: hooks.PreToolUse is not an array - branch-guard hook was NOT wired; fix the file and re-run `dienstweg update`" };
   }
   settings.hooks.PreToolUse.push({
     matcher: "Bash",
     hooks: [{ type: "command", command: HOOK_COMMAND }],
   });
   writeFileEnsuringDir(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-  return "settings.json: added branch-guard PreToolUse hook";
+  return { wired: true, message: "settings.json: added branch-guard PreToolUse hook" };
 }
 
 export { STATE_DIR };

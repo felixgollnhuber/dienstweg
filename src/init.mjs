@@ -72,7 +72,7 @@ export async function runInit(root, flags) {
   console.log(`  config:   dienstweg.config.json (team ${config.tracker.linearTeam}, prefix ${config.tracker.issuePrefix}, base ${config.git.baseBranch})`);
   for (const target of Object.keys(manifest.files)) console.log(`  written:  ${target}`);
   for (const target of skipped) console.log(`  SKIPPED:  ${target} (pre-existing, not overwritten)`);
-  console.log(`  ${settingsAction}`);
+  console.log(`  ${settingsAction.message}`);
   for (const a of agentsActions) console.log(`  ${a}`);
   if (localCreated) console.log("  written:  dienstweg.local.md (project-owned stub)");
 
@@ -93,6 +93,9 @@ export async function runInit(root, flags) {
     console.log("  2. Run `dienstweg check` to verify the setup.");
     console.log("  3. Create your first issue with /create-issue in Claude Code.");
   }
+  if (!settingsAction.wired) {
+    console.error(`\nWARN: the branch-guard hook is NOT wired - fix .claude/settings.json and run \`dienstweg update\`.`);
+  }
   console.log("\nCommit these files: dienstweg.config.json, dienstweg.local.md, .claude/, .dienstweg/manifest.json.");
-  return needsAudit && skipped.length ? 1 : 0;
+  return (needsAudit && skipped.length) || !settingsAction.wired ? 1 : 0;
 }
