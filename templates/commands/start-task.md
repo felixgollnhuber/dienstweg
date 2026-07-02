@@ -1,144 +1,145 @@
 ---
-description: Worktree + Plan-Mode fuer ein Linear-Issue vorbereiten (1-Run-Setup fuer /goal)
-argument-hint: <ISSUE-IDENTIFIER> (z.B. 123 oder {{ISSUE_PREFIX}}-123)
+description: Prepare a Linear issue for implementation - worktree + plan + ready-to-run /goal condition
+argument-hint: <ISSUE-IDENTIFIER> (e.g. 123 or PREFIX-123)
 ---
 
-Du bereitest jetzt das Linear-Issue `$ARGUMENTS` fuer die Bearbeitung vor. Ziel: Worktree + umfassender Plan in der Linear-Issue-Description (Sektion `## Plan`), sodass danach `/goal` ohne weitere Rueckfragen durcharbeiten kann.
+You are preparing the Linear issue `$ARGUMENTS` for implementation. Goal: worktree + a comprehensive plan in the Linear issue description (section `## Plan`), so that `/goal` can afterwards work through it without further questions.
 
-**Sprache: Deutsch (siehe AGENTS.md/CLAUDE.md).**
+## Step 0 - Load the project config
 
-## Schritt 1 - Issue laden
+- Read `dienstweg.config.json` at the repo root. All `config.*` references below come from this file. Key values: `config.tracker.issuePrefix`, `config.tracker.linearTeam`, `config.git.baseBranch`, `config.gates.build`, `config.areas.highRisk`, `config.areas.singleWriter`, `config.review.*`, `config.extraConstraints`.
+- Read `dienstweg.local.md` if it exists - its rules apply in addition to this command.
+- Respond to the user in `config.language`.
+- Use the Linear MCP tools (`get_issue`, `save_issue`, `list_issues`, ... - the tool prefix depends on the installed Linear MCP server).
 
-- Normalisiere `$ARGUMENTS` auf das Format `{{ISSUE_PREFIX}}-XXX` (z.B. `123` -> `{{ISSUE_PREFIX}}-123`).
-- `mcp__plugin_linear_linear__get_issue id="{{ISSUE_PREFIX}}-XXX"` aufrufen. Lies: Titel, Description (inkl. Sektionen `## Plan`, `## Acceptance Criteria`, `## Definition of Done`, `## Setup`, `## Final Summary`), Labels, Project, Milestone, Relations, State.
-- Wenn das Issue nicht existiert oder bereits `Done` ist: STOP, User fragen.
-- Pruefe Parallel-Labels (`parallel-safe`, `single-writer:<bereich>`) und logge sie kurz.
-- Wenn die Description leer ist oder das Template fehlt: Description-Template aus der AGENTS.md (Sektion "Task-Lifecycle") als Skelett anlegen, AC + DoD aus dem Issue-Titel ableiten und vor Schritt 4 dem User zur Freigabe vorlegen.
+## Step 1 - Load the issue
 
-## Schritt 2 - Worktree sicherstellen
+- Normalize `$ARGUMENTS` to the format `<issuePrefix>-XXX` (e.g. `123` -> `FAC-123` when the prefix is FAC).
+- Call `get_issue` with that identifier. Read: title, description (including the sections `## Plan`, `## Acceptance Criteria`, `## Definition of Done`, `## Setup`, `## Final Summary`), labels, project, milestone, relations, state.
+- If the issue does not exist or is already `Done`: STOP, ask the user.
+- Check the parallelism labels (`parallel-safe`, `single-writer:<area>`) and log them briefly.
+- If the description is empty or missing the template: create the skeleton from the description template (see the dienstweg block in AGENTS.md), derive AC + DoD from the issue title, and present it to the user for approval before step 4.
 
-- Branch-Name: `tasks/{{issue_prefix_lower}}-XXX-<kurz-slug>` (Slug aus Issue-Titel, max. 4-5 Worte, kebab-case, lowercase).
-- Worktree-Pfad: `.claude/worktrees/tasks+{{issue_prefix_lower}}-XXX-<slug>` relativ zum Main-Repo.
+## Step 2 - Ensure the worktree
 
-Pruefe zuerst via `git worktree list`, ob fuer dieses Issue schon ein Worktree existiert:
+- Branch name: `tasks/<issueprefix-lowercase>-XXX-<short-slug>` (slug from the issue title, max 4-5 words, kebab-case, lowercase).
+- Worktree path: `.claude/worktrees/tasks+<issueprefix-lowercase>-XXX-<slug>` relative to the main repo.
 
-- **existiert** + cwd zeigt darauf: Anlage skippen, ggf. {{SETUP_CMD}} (idempotent), weiter zu Schritt 3.
-- **existiert** + cwd zeigt woanders: STOP, User fragen ob der existierende Worktree genutzt werden soll.
-- **existiert nicht**: anlegen (unten), danach in den Worktree wechseln (cwd!).
+First check via `git worktree list` whether a worktree for this issue already exists:
 
-**Anlage** ({{WORKTREE_HELPER}} = `-` bedeutet plain Git):
+- **exists** and cwd points at it: skip creation, run the setup command if the project has one (idempotent), continue with step 3.
+- **exists** and cwd points elsewhere: STOP, ask the user whether to use the existing worktree.
+- **does not exist**: create it (below), then switch into it (cwd!).
+
+Creation (plain git; if the project defines a worktree helper script in `dienstweg.local.md`, use that instead - it is the single source of truth for setup):
 
 ```
-git worktree add .claude/worktrees/tasks+{{issue_prefix_lower}}-XXX-<slug> -b tasks/{{issue_prefix_lower}}-XXX-<slug> {{BASE_BRANCH}}
-cd .claude/worktrees/tasks+{{issue_prefix_lower}}-XXX-<slug> && {{SETUP_CMD}}
+git worktree add .claude/worktrees/tasks+<prefix>-XXX-<slug> -b tasks/<prefix>-XXX-<slug> <config.git.baseBranch>
+cd .claude/worktrees/tasks+<prefix>-XXX-<slug> && <project setup, e.g. npm ci - skip if not applicable>
 ```
 
-Falls das Projekt ein Helper-Script definiert ({{WORKTREE_HELPER}}), stattdessen dieses verwenden - es ist die Single Source of Truth fuer das Setup.
+## Step 3 - Destructive-setup decision (decide only, do NOT execute)
 
-## Schritt 3 - Demo-Daten-Entscheidung (NICHT ausfuehren, nur entscheiden)
+If the project defines a demo-data or seed command (in `dienstweg.local.md`): judge from the issue content + AC whether it is needed for manual verification. If needed, note it in the plan's Setup section as optional-before-manual-verification. **Never execute it in /start-task** - it is destructive and the user decides. If the project defines no such command, note `Demo data: not required` in the plan.
 
-{{DEMO_DATA_CMD}} = `-`: Dieser Schritt entfaellt fuer dieses Projekt; im Plan-Block unter "Setup" notieren `Demo-Daten: nicht erforderlich`.
+## Step 4 - Enter PlanMode and ask questions
 
-Sonst: Beurteile aus Issue-Inhalt + AC, ob das Demo-Daten-Setup (`{{DEMO_DATA_CMD}}`) fuer die manuelle Verifikation noetig ist. Bei "noetig": im Plan-Block notieren `{{DEMO_DATA_CMD}} (optional, vor manueller Verifikation)`. **NICHT** im /start-task ausfuehren - destruktiv, der User entscheidet.
+- Call `EnterPlanMode`.
+- In PlanMode, ask as many questions via `AskUserQuestion` as needed to resolve ambiguities. **Two extra questions beat one silent assumption.** Typical topics:
+  - Scope boundaries: what belongs in this issue, what becomes a follow-up issue?
+  - Which concrete files/components will be touched
+  - Test strategy (unit / integration / manual)
+  - Schema/format impact, rollback path
+  - Dependencies on parallel issues (check first: `list_issues state="In Progress" label="single-writer:<area>"`)
+- Only when all essential questions are resolved: continue with step 5.
 
-## Schritt 4 - PlanMode aktivieren und Fragen stellen
+## Step 5 - Write the comprehensive plan
 
-- Rufe `EnterPlanMode` auf.
-- Stelle im PlanMode so viele Fragen via `AskUserQuestion` wie noetig, um Ambiguitaeten aufzuloesen. **Lieber 2 Fragen mehr als eine stillschweigende Annahme.** Typische Themen:
-  - Scope-Abgrenzung: was gehoert in dieses Issue, was wird Folge-Issue?
-  - Welche konkreten Files/Komponenten angefasst werden
-  - Test-Strategie (Unit / Integration / Manual)
-  - Schema-/Format-Auswirkungen, Rollback-Pfad
-  - Abhaengigkeiten zu parallelen Issues (vorher `mcp__plugin_linear_linear__list_issues state="In Progress" label="single-writer:<bereich>"`)
-- Erst wenn alle wesentlichen Fragen geklaert sind: weiter zu Schritt 5.
-
-## Schritt 5 - Umfassenden Plan schreiben
-
-Der Plan muss `/goal`-tauglich sein. Er wird in die Linear-Issue-Description in den `## Plan`-Block geschrieben. Pflicht-Sektionen:
+The plan must be `/goal`-ready. It goes into the Linear issue description's `## Plan` block. Required sections:
 
 ```markdown
 ## Plan
 
 ### Setup
-- Worktree: <pfad> auf Branch <branch>
-- Demo-Daten: <noetig | nicht erforderlich>
+- Worktree: <path> on branch <branch>
+- Demo data: <required | not required>
 
-### Touch-Points (konkrete Files)
-- <pfad/file-a> - <was geaendert wird>
-- <pfad/file-b> - <was geaendert wird>
+### Touch points (concrete files)
+- <path/file-a> - <what changes>
+- <path/file-b> - <what changes>
 
-### Implementierungs-Schritte (in Reihenfolge)
+### Implementation steps (in order)
 1. ...
 2. ...
 
 ### Tests
-- Unit: <welche Tests / wo>
-- Integration: <ja/nein, welche>
-- Manuelle Verifikation: <welche Flows>
+- Unit: <which tests / where>
+- Integration: <yes/no, which>
+- Manual verification: <which flows>
 
-### DoD-Gates
-- {{BUILD_CHECKS}}
-- 3-fach-Ensemble-Review vor Merge-Vorschlag, direkt fixbare Findings als Folge-Commit
+### DoD gates
+- <config.gates.build>
+- <config.review.ensembleSize>x ensemble review before proposing the merge, directly fixable findings as follow-up commits
 
-### Risiken / Rollback
-- <Risiko 1> -> <Mitigation>
-- Rollback-Pfad: <...>
+### Risks / rollback
+- <risk 1> -> <mitigation>
+- Rollback path: <...>
 
 ### PR
-- Base: `{{BASE_BRANCH}}`
-- Titel: `{{ISSUE_PREFIX}}-XXX - <Issue-Titel>`
-- Commit-Prefix: `{{ISSUE_PREFIX}}-XXX - <Kurz>`
+- Base: `<config.git.baseBranch>`
+- Title: `<issuePrefix>-XXX - <issue title>`
+- Commit prefix: `<issuePrefix>-XXX - <short>`
 ```
 
-## Schritt 6 - Plan in die Issue-Description schreiben, State setzen
+## Step 6 - Write the plan into the issue description, set the state
 
-- `mcp__plugin_linear_linear__save_issue id="{{ISSUE_PREFIX}}-XXX" description="<voller body mit aktualisiertem ## Plan-Block>"` - ersetzt die komplette Description; vorhandene Sektionen (`## Acceptance Criteria`, `## Definition of Done`) erhalten, nur `## Plan` ergaenzen/ueberschreiben.
-- `mcp__plugin_linear_linear__save_issue id="{{ISSUE_PREFIX}}-XXX" state="In Progress" assignee="me"`.
+- `save_issue` with the full description body (updated `## Plan` block; keep existing `## Acceptance Criteria` and `## Definition of Done` content, only add/replace `## Plan`). Read with `get_issue` first, patch precisely, write back - the description API replaces the whole body.
+- `save_issue state="In Progress" assignee="me"`.
 
-## Schritt 7 - Goal-Condition fuer den `/goal`-Loop formulieren
+## Step 7 - Compose the /goal condition
 
-Der `/goal`-Command (Claude Code v2.1.139+) ist ein session-scoped Stop-Hook: nach jedem Turn prueft ein Kleinmodell anhand des Transkripts, ob die Condition erfuellt ist. Die Condition braucht **messbare, im Transkript pruefbare End-Bedingungen**. Formuliere sie genau nach diesem Schema (Single-Line, max ~3500 Zeichen, fertig zum Absenden):
-
-```
-/goal {{ISSUE_PREFIX}}-XXX Plan komplett umgesetzt: alle Implementation-Schritte aus dem ## Plan-Block der Issue-Description erledigt, {{BUILD_CHECKS}} exit 0, alle Acceptance-Criteria-Boxen in der ## Acceptance Criteria-Sektion via mcp__plugin_linear_linear__save_issue auf `- [x]` getoggelt, PR gegen {{BASE_BRANCH}} erstellt (Titel: "{{ISSUE_PREFIX}}-XXX - <titel>"), 3-fach-Ensemble-Review (3 parallele Review-Subagents in EINER message, broad scope) ausgefuehrt mit Konsens-Synthese und Folge-Commits fuer Konsens-Findings, Re-Review-Loop bei groesseren Aenderungen (Schwellwert: neue Logik / High-Risk / >50 LOC / >3 neue Files / Interface-Change, max 3 Runden), VOR `gh pr merge` alle DoD-Boxen in der ## Definition of Done-Sektion via save_issue auf `- [x]` getoggelt und ## Final Summary-Sektion mit Merge-SHA-Platzhalter und PR-Nummer gesetzt sowie state="In Review", Auto-Merge via `gh pr merge <N> --squash --delete-branch` nur wenn alle Gates gruen (Base={{BASE_BRANCH}}, Build exit 0, DoD-Boxen alle abgehakt, keine offenen [3/3]/[2/3]-Critical-Findings, Re-Review-Loop abgeschlossen, kein User-Override), PFLICHT-SCHRITT nach erfolgreichem Merge: `git checkout {{BASE_BRANCH}} && git pull --ff-only` ausfuehren und in einer User-Message bestaetigen dass der lokale {{BASE_BRANCH}}-Branch jetzt auf dem post-merge HEAD steht - dieser Schritt darf NICHT uebersprungen werden, und ALS LETZTER SCHRITT VOR LOOP-EXIT explizit mcp__plugin_linear_linear__save_issue id="{{ISSUE_PREFIX}}-XXX" state="Done" plus description-Patch mit echter Merge-SHA in ## Final Summary (Loop darf NICHT vorher stoppen, auch wenn alles andere fertig wirkt). Constraints: kein --no-verify, kein Hook-Bypass, kein Push auf protected Branches, kein Force-Push, {{EXTRA_CONSTRAINTS}}, keine Files ausserhalb der Plan-Touch-Points. Stoppe nach 40 turns falls nicht erfuellt.
-```
-
-Wenn das Issue einen **High-Risk-Bereich** ({{HIGH_RISK_AREAS}}) anfasst, ergaenze in den Constraints: `kleinere Commits, Zwischen-Verifikation nach jeder destruktiven Datenoperation`.
-
-Wenn ein `single-writer:<bereich>`-Label aktiv ist, ergaenze: `kein paralleler Edit an <bereich>-Hot-Files solange anderes Issue In Progress`.
-
-## Schritt 8 - ExitPlanMode
-
-Praesentiere via `ExitPlanMode` eine kompakte Uebersicht:
-
-- Worktree-Pfad + Branch
-- Demo-Daten-Entscheidung (1 Satz, falls anwendbar)
-- Anzahl Implementierungs-Schritte
-- Hauptrisiken (max. 2 Bullets)
-- **Den fertig formulierten `/goal`-Befehl aus Schritt 7 in einem eigenen Code-Block** (copy-paste-bereit)
-- Hinweis: "Plan ist im Linear-Issue gespeichert (## Plan-Block der Description). Nach Approval bitte den `/goal`-Befehl absenden."
-
-## Schritt 9 - Nach Plan-Approval (neuer Turn)
-
-Sobald der User den Plan freigibt und der naechste Turn beginnt: **KEINE eigene Code-Arbeit starten.** Antworte stattdessen mit genau dieser Struktur:
+The `/goal` command (Claude Code v2.1.139+) is a session-scoped stop hook: after every turn a small model checks the transcript against the condition. The condition therefore needs **measurable, transcript-verifiable end states**. Compose it exactly after this schema (single line, max ~3500 chars, in `config.language`, ready to send - replace every `<...>` with the concrete values from the config and this issue):
 
 ```
-Plan approved. Bitte den autonomen Loop starten:
-
-/goal <condition aus Schritt 7>
-
-(In die Chat-Zeile, mit Enter.)
+/goal <issuePrefix>-XXX plan fully implemented: all implementation steps from the ## Plan block of the issue description done, <config.gates.build> exit 0, all acceptance criteria boxes in the ## Acceptance Criteria section toggled to `- [x]` via save_issue, PR created against <config.git.baseBranch> (title: "<issuePrefix>-XXX - <title>"), <config.review.ensembleSize>x ensemble review executed (<config.review.ensembleSize> parallel review subagents in ONE message, broad scope) with consensus synthesis and follow-up commits for consensus findings, re-review loop on larger changes (threshold: new logic / high-risk / >50 LOC / >3 new files / interface change, max <config.review.maxRounds> rounds), BEFORE `gh pr merge` all DoD boxes in the ## Definition of Done section toggled to `- [x]` via save_issue and the ## Final Summary section set with merge-SHA placeholder + PR number plus state="In Review", auto-merge via `gh pr merge <N> --squash --delete-branch` only if all gates are green (base=<config.git.baseBranch>, build exit 0, all DoD boxes checked, no open majority critical findings, re-review loop finished, no user override), MANDATORY step after a successful merge: run `git checkout <config.git.baseBranch> && git pull --ff-only` and confirm the new HEAD in a user message - this step must NOT be skipped, and AS THE LAST STEP BEFORE LOOP EXIT explicitly save_issue state="Done" plus a description patch with the real merge SHA in ## Final Summary (the loop must NOT stop earlier even if everything else looks finished). Constraints: no --no-verify, no hook bypass, no push to protected branches, no force push, <config.extraConstraints, comma-joined - omit if empty>, no files outside the plan's touch points. Stop after 40 turns if not fulfilled.
 ```
 
-Warte auf den `/goal`-Befehl des Users. Erst wenn dieser kommt, beginnt die Implementierung - und dann **nicht durch diesen Slash-Command**, sondern durch den offiziellen `/goal`-Loop.
+If the issue touches a **high-risk area** (`config.areas.highRisk`), add to the constraints: `smaller commits, intermediate verification after every destructive data operation`.
 
-**Begruendung**: `/goal` kann technisch nicht aus einem Slash-Command heraus getriggert werden. Der `/goal`-Loop hat Vorteile gegenueber einem DIY-Continue: per-turn Completion-Check, automatisches Stop bei Bounding-Clause, robust gegen Zwischen-Fehler, in `--resume` wiederherstellbar.
+If a `single-writer:<area>` label is active, add: `no parallel edits to <area> hot files while another issue is In Progress`.
 
-## Harte Regeln
+## Step 8 - ExitPlanMode
 
-- In Schritten 1-9: KEINE Code-Aenderungen, KEIN Demo-Daten-Run, KEIN Commit/Push/PR. Die Implementierung passiert ausschliesslich im darauffolgenden `/goal`-Loop.
-- Destruktive Setup-Kommandos ({{DEMO_DATA_CMD}}) nur nach expliziter User-Bestaetigung.
-- Bei `single-writer:<bereich>`-Label: vor Schritt 7 nochmal konkurrierende `In Progress`-Issues pruefen, bei Konflikt User fragen.
-- Die Goal-Condition muss **messbar im Transkript** sein - keine Bedingungen wie "Code ist sauber".
-- Alle Description-Patches via `save_issue` mit komplettem `description`-Body: erst `get_issue` lesen, gezielt patchen, zurueckschreiben.
-- Pro Worktree maximal ein aktives `/goal`.
+Present a compact overview via `ExitPlanMode`:
+
+- Worktree path + branch
+- Destructive-setup decision (one sentence, if applicable)
+- Number of implementation steps
+- Main risks (max 2 bullets)
+- **The fully composed `/goal` command from step 7 in its own code block** (copy-paste ready)
+- Note: "The plan is stored in the Linear issue (## Plan block of the description). After approval please send the `/goal` command."
+
+## Step 9 - After plan approval (new turn)
+
+As soon as the user approves the plan and the next turn begins: **do NOT start any implementation work yourself.** Instead reply with exactly this structure:
+
+```
+Plan approved. Please start the autonomous loop:
+
+/goal <condition from step 7>
+
+(Into the chat line, then Enter.)
+```
+
+Wait for the user's `/goal` command. Only when it arrives does implementation begin - and then **not through this slash command** but through the official `/goal` loop.
+
+Rationale: `/goal` cannot technically be triggered from within a slash command. The `/goal` loop beats a DIY continue: per-turn completion check, automatic stop on the bounding clause, robust against intermediate errors, recoverable via `--resume`.
+
+## Hard rules
+
+- In steps 0-9: NO code changes, NO destructive setup runs, NO commit/push/PR. Implementation happens exclusively in the subsequent `/goal` loop.
+- Destructive setup commands only after explicit user confirmation.
+- With an active `single-writer:<area>` label: re-check for competing `In Progress` issues before step 7; on conflict ask the user.
+- The goal condition must be **measurable in the transcript** - no conditions like "code is clean".
+- All description patches via `save_issue` with the complete description body: `get_issue` first, patch precisely, write back.
+- At most one active `/goal` per worktree.

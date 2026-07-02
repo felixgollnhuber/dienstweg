@@ -1,0 +1,21 @@
+{
+  "name": "dienstweg",
+  "version": "0.1.0",
+  "description": "Config-driven task workflow framework for agent-assisted development (Claude Code + Linear + GitHub). Immer schoen den Dienstweg einhalten.",
+  "type": "module",
+  "bin": {
+    "dienstweg": "bin/dienstweg.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "migrations",
+    "WORKFLOW.md"
+  ],
+  "private": true,
+  "license": "UNLICENSED"
+}

@@ -1,31 +1,50 @@
-# agent-taskflow
+# dienstweg
 
-Wiederverwendbares Task-Workflow-Framework fuer agentengestuetzte Softwareprojekte (Claude Code + Linear + GitHub). Extrahiert und generalisiert aus dem [internal]/[internal]-Migrations-Workflow (Juli 2026).
+Config-driven task workflow framework for agent-assisted development (Claude Code + Linear + GitHub). *Immer schoen den Dienstweg einhalten.*
 
-Kernidee: Ein Linear-Issue ist die Single Source of Truth pro Task. Zwei Slash-Commands strukturieren den Weg dorthin (`/create-issue`) und hindurch (`/start-task` -> `/goal`-Loop), ein Review-Ensemble und harte Auto-Merge-Gates sichern die Qualitaet, ein PreToolUse-Hook erzwingt die Git-Regeln maschinell.
+One Linear issue is the single source of truth per task. Two slash commands structure the way in (`/create-issue`) and through (`/start-task` -> `/goal` loop), an ensemble review and hard auto-merge gates protect quality, and a PreToolUse hook enforces the git rules machine-side.
 
-## Inhalt
+The key design decision: **configuration instead of instantiation**. The commands and the hook are generic and read `dienstweg.config.json` at runtime. Generated files are tool-owned (never hand-edited), so `dienstweg update` is a conflict-free overwrite - workflow updates roll out to every adopting repo with one command.
 
-- [WORKFLOW.md](WORKFLOW.md) - das Framework: Prinzipien, Issue-Schema, Task-Lifecycle, Review-Ensemble, Auto-Merge-Gates, /goal-Schema, Adoptions-Anleitung
-- [templates/commands/create-issue.md](templates/commands/create-issue.md) - parametrisierter Slash-Command: Issue nach Schema anlegen (Interferenz-Check + PlanMode-Drafting)
-- [templates/commands/start-task.md](templates/commands/start-task.md) - parametrisierter Slash-Command: Worktree + Plan + /goal-Condition fuer ein Issue
-- [templates/AGENTS-task-lifecycle.md](templates/AGENTS-task-lifecycle.md) - Snippet fuer die AGENTS.md/CLAUDE.md des adoptierenden Projekts
-- [templates/hooks/branch-guard.mjs](templates/hooks/branch-guard.mjs) - konfigurierbarer Guard-Hook (PR-Base, protected Branches, --no-verify, Force-Push)
-- [templates/settings-hook-snippet.json](templates/settings-hook-snippet.json) - Hook-Verdrahtung fuer .claude/settings.json
+## Install / adopt
 
-## Adoption in 6 Schritten
+From the target repo's root:
 
-1. Linear-Team (eigener Issue-Prefix) und ggf. Default-Project anlegen
-2. `templates/commands/*` nach `<projekt>/.claude/commands/` kopieren
-3. Alle `{{PLATZHALTER}}` ersetzen (Tabelle in WORKFLOW.md, Sektion "Adoption")
-4. `templates/hooks/branch-guard.mjs` kopieren, `CONFIG` oben anpassen, via settings.json verdrahten
-5. `templates/AGENTS-task-lifecycle.md` (Platzhalter ersetzt) in die Projekt-AGENTS.md uebernehmen
-6. Optional: `ensemble-reviewer`-Subagent im Projekt definieren (sonst Fallback `general-purpose`)
+```
+npx /path/to/dienstweg init          # interactive interview
+npx /path/to/dienstweg init --yes    # non-interactive, defaults + flags
+```
 
-Referenz-Adoption: das Repo `[internal-repo]` (gleicher Developer-Ordner).
+`init` asks: existing project or fresh repo, project name, conversation language (default en), Linear team/prefix, base branch, build gates, high-risk and single-writer areas. It writes:
 
-## Hinweise
+- `dienstweg.config.json` - the single source of project values (the only file you edit)
+- `.claude/commands/create-issue.md`, `.claude/commands/start-task.md` - generic commands (tool-owned)
+- `.claude/hooks/branch-guard.mjs` + a merged hook entry in `.claude/settings.json`
+- a marker block in `AGENTS.md` (`<!-- dienstweg:begin/end -->`) + `CLAUDE.md` as `@AGENTS.md` import if absent
+- `dienstweg.local.md` - project-owned stub for rules the config cannot express
+- `.dienstweg/manifest.json` - hashes of tool-owned files (hand-edit detection)
 
-- Sprache der Templates: Deutsch (an eigene Projekt-Konvention anpassen).
-- Der Workflow setzt Claude Code v2.1.139+ (`/goal`-Command) und das Linear-MCP-Plugin voraus.
-- Bewusst NICHT enthalten: Session-Rename-Choreografie (in frueheren Versionen des Ursprungs-Workflows vorhanden, entfernt).
+For **existing projects**, `init` additionally emits a self-contained **onboarding prompt** (printed + saved to `.dienstweg/onboarding-prompt.md`): paste it into Claude Code or Codex and the agent audits the repo for rules that contradict the workflow (CLAUDE.md, CONTRIBUTING, CI, hooks), proposes resolutions, and verifies the setup with `dienstweg check`.
+
+## Update
+
+```
+npx /path/to/dienstweg update           # regenerate tool-owned files, run config migrations
+npx /path/to/dienstweg update --force   # also overwrite hand-edited generated files
+npx /path/to/dienstweg check            # verify config, files, hook wiring, AGENTS block
+```
+
+Versioning: dienstweg versions are semver git tags on this repo; every adopting repo carries a `dienstwegVersion` stamp in its config. Config schema changes ship as migrations in `migrations/index.mjs` and run automatically during `update`.
+
+## Contract
+
+- Tool-owned files (commands, hook, AGENTS block) are **never hand-edited**. Customization goes into `dienstweg.config.json` (`extraDoD`, `extraConstraints`, `areas`, `gates`) or `dienstweg.local.md`. `check` flags violations.
+- The workflow itself is documented in [WORKFLOW.md](WORKFLOW.md).
+
+## Requirements
+
+Node >= 20, git, Claude Code v2.1.139+ (`/goal`), a Linear MCP server, `gh` CLI.
+
+## Origin
+
+Extracted and generalized from the [internal]/[internal] migration workflow (July 2026). Deliberately absent: session-rename choreography (removed).

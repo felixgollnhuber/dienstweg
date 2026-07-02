@@ -1,127 +1,132 @@
 ---
-description: Neues Linear-Issue ({{ISSUE_PREFIX}}-XXX) nach Repo-Schema anlegen - Interferenz-Check + gemeinsames PlanMode-Drafting
-argument-hint: <kurze Themenbeschreibung, optional>
+description: Create a new Linear issue following the project schema - interference check + collaborative PlanMode drafting
+argument-hint: <short topic description, optional>
 ---
 
-Du legst jetzt ein neues Linear-Issue zum Thema `$ARGUMENTS` an. Ziel: nach Repo-Konvention (siehe AGENTS.md Sektion "Task-Lifecycle") ein vollstaendiges, sauber geplantes Issue mit Description-Template, AC, DoD, korrekten Labels und Project-Zuordnung, ohne Konflikte zu parallel laufenden Issues.
+You are creating a new Linear issue about `$ARGUMENTS`. Goal: a complete, cleanly planned issue following the project convention (see the dienstweg block in AGENTS.md) - description template, AC, DoD, correct labels, project assignment - without conflicting with issues that are currently in flight.
 
-**Sprache: Deutsch (siehe AGENTS.md/CLAUDE.md).**
+**Hard rule up front**: this command changes **no code**, creates **no branch**, initializes **no worktree** and sets **no state to "In Progress"**. All of that happens later via `/start-task <issuePrefix>-XXX`. Here we only create a backlog issue.
 
-**Harte Regel vorab**: In diesem Command wird **kein Code geaendert**, **kein Branch erstellt**, **kein Worktree initialisiert** und **kein State auf "In Progress"** gesetzt. Das alles macht erst danach `/start-task {{ISSUE_PREFIX}}-XXX`. Hier wird nur ein Issue im Backlog erzeugt.
+## Step 0 - Load the project config
 
-## Schritt 1 - Thema verstehen
+- Read `dienstweg.config.json` at the repo root. All `config.*` references below come from this file.
+- Read `dienstweg.local.md` if it exists - its rules apply in addition to this command.
+- Respond to the user in `config.language`.
+- Use the Linear MCP tools (`list_teams`, `list_issues`, `save_issue`, ... - the tool prefix depends on the installed Linear MCP server).
 
-- Wenn `$ARGUMENTS` leer ist: via `AskUserQuestion` nach dem Thema fragen (Titel-Idee + 1-3 Saetze Kontext). Nicht raten.
-- Wenn `$ARGUMENTS` da ist, aber unklar: nachfragen, was konkret gemacht werden soll, **bevor** Schritt 2 startet.
-- Identifiziere grob den **Bereich** (siehe {{SINGLE_WRITER_AREAS}} und {{HIGH_RISK_AREAS}}). Das steuert spaeter Labels, Risiken und DoD-Gates.
+## Step 1 - Understand the topic
 
-## Schritt 2 - Repo-Kontext + Linear-Kontext laden
+- If `$ARGUMENTS` is empty: ask for the topic via `AskUserQuestion` (title idea + 1-3 sentences of context). Do not guess.
+- If `$ARGUMENTS` is present but unclear (a single keyword): ask what concretely should happen **before** starting step 2. An interference check without a clear scope is wasted time.
+- Roughly identify the **area** (compare with `config.areas.highRisk` and `config.areas.singleWriter`). This drives labels, risks and DoD gates later.
 
-Parallel ausfuehren (keine Abhaengigkeiten):
+## Step 2 - Load repo + Linear context
 
-- `mcp__plugin_linear_linear__list_teams` -> Team `{{LINEAR_TEAM}}` finden (Default-Team fuer dieses Repo).
-- `mcp__plugin_linear_linear__list_projects` -> aktive Projects auflisten. Default-Project: {{DEFAULT_PROJECT}} (`-` = kein Project, Team-Backlog). Wenn der User explizit ein Project genannt hat, das verwenden.
-- Falls ein Project gesetzt ist: `mcp__plugin_linear_linear__list_milestones project="<projectId>"` fuer die Zuordnung in Schritt 5.
-- `mcp__plugin_linear_linear__list_issue_labels team="{{LINEAR_TEAM}}"` -> vorhandene Labels (insbesondere `parallel-safe` und alle `single-writer:<bereich>`) cachen. Wichtig: ohne `team`-Parameter fehlen team-scoped Labels. Wenn ein noetiges Label fehlt, in Schritt 5 via `create_issue_label` anlegen - aber nur nach explizitem User-OK.
+Execute in parallel (no dependencies):
 
-## Schritt 3 - Interferenz-Check (Pflicht, parallel zu Schritt 2)
+- `list_teams` -> find the team `config.tracker.linearTeam` (default team for this repo).
+- `list_projects` -> list active projects. Default: `config.tracker.defaultProject` (null = no project, team backlog). If the user explicitly named another project, use that.
+- If a project is set: `list_milestones project="<projectId>"` for the assignment in step 5.
+- `list_issue_labels team="<config.tracker.linearTeam>"` -> cache existing labels (especially `parallel-safe` and all `single-writer:<area>`). Important: without the `team` parameter, team-scoped labels are missing. If a needed label does not exist, create it in step 5 via `create_issue_label` - but only after explicit user approval.
 
-Ziel: Issues finden, die mit dem geplanten Thema kollidieren - inhaltlich, durch geteilte Files/Module, oder durch single-writer-Locks. Fuehre **alle** Checks aus (in einer Tool-Batch):
+## Step 3 - Interference check (mandatory, parallel to step 2)
 
-1. **Alle aktiv laufenden Issues**: `list_issues team="{{LINEAR_TEAM}}" state="In Progress"` - heisseste Konfliktkandidaten (Branches/Worktrees existieren).
-2. **Alle "In Review"-Issues**: `list_issues team="{{LINEAR_TEAM}}" state="In Review"` - offene PRs koennten den Scope schon abdecken.
-3. **Single-Writer-Locks im betroffenen Bereich**: passt der Bereich aus Schritt 1 zu einem `single-writer:<bereich>`-Label ({{SINGLE_WRITER_AREAS}}), pruefe `list_issues label="single-writer:<bereich>" state="In Progress"` und `state="In Review"`.
-4. **Themenaehnliche Backlog-Issues**: `list_issues team="{{LINEAR_TEAM}}" state="Backlog"` und `state="Todo"`, lokal auf Titel-Stichwoerter filtern (case-insensitive). Bei >50 Treffern nur Top-Treffer auswerten.
+Goal: find issues that could collide with the planned topic - by content, by shared files/modules, or through single-writer locks. Run **all** of these checks (in one tool batch):
 
-Aus den Ergebnissen eine **Konflikt-Tabelle** bauen (Issue, State, Bereich/Label, Konfliktart, Wirkung auf neues Issue).
+1. **All actively running issues**: `list_issues team="<team>" state="In Progress"` - the hottest conflict candidates (branches/worktrees exist).
+2. **All "In Review" issues**: `list_issues team="<team>" state="In Review"` - open PRs might already cover the scope.
+3. **Single-writer locks in the affected area**: if the area from step 1 matches a `single-writer:<area>` label (`config.areas.singleWriter`), check `list_issues label="single-writer:<area>" state="In Progress"` and `state="In Review"`.
+4. **Topically similar backlog issues**: `list_issues team="<team>" state="Backlog"` and `state="Todo"`, filter locally on title keywords (case-insensitive). With more than 50 hits, evaluate only the top matches.
 
-Wenn ein bestehendes Issue das Thema **bereits abdeckt**: STOP, dem User die Treffer im PlanMode zeigen und fragen, ob das alte Issue genutzt/erweitert wird oder das neue trotzdem als getrennter Scope entsteht.
+Build a **conflict table** from the results (issue, state, area/label, conflict type, impact on the new issue).
 
-## Schritt 4 - PlanMode aktivieren und gemeinsam planen
+If an existing issue **already covers** the topic: STOP, show the user the hits in PlanMode and ask whether the old issue should be used/extended instead, or the new issue is still a separate scope.
 
-- Rufe `EnterPlanMode` auf.
-- Praesentiere zuerst die **Konflikt-Tabelle** kompakt (auch wenn leer - dann explizit "Keine Interferenzen gefunden").
-- Stelle dann via `AskUserQuestion` so viele Fragen wie noetig. **Lieber 2-3 Fragen mehr als eine stillschweigende Annahme.** Typische Themen:
-  - **Titel**: Vorschlag + Bestaetigung. Kurz, beschreibend, ohne Prefix (vergibt Linear).
-  - **Scope-Abgrenzung**: dieses Issue vs. Folge-Issue?
-  - **Acceptance Criteria**: 2 bis max. 6-8 atomare, pruefbare Kriterien, je eine Checkbox.
+## Step 4 - Enter PlanMode and draft together
+
+- Call `EnterPlanMode`.
+- First present the **conflict table** compactly (even when empty - then say explicitly "no interference found").
+- Then ask as many questions via `AskUserQuestion` as needed. **Two or three extra questions beat one silent assumption.** Typical topics:
+  - **Title**: propose + confirm. Short, descriptive, without prefix (Linear assigns it).
+  - **Scope boundaries**: this issue vs. follow-up issue?
+  - **Acceptance criteria**: 2 to max 6-8 atomic, verifiable criteria, one checkbox each.
   - **Priority**: Urgent (1) / High (2) / Medium (3) / Low (4). Default Medium.
-  - **Project + Milestone**: Default {{DEFAULT_PROJECT}}; Milestone nur falls passend.
-  - **Labels**: Pflicht genau eines von `parallel-safe` ODER `single-writer:<bereich>`. Bereich unklar -> User fragen.
-  - **Relations**: Parent / Blocked-by / Blocks? Falls via `save_issue` nicht setzbar: in `## Setup` als `Blocked by: {{ISSUE_PREFIX}}-XXX` notieren.
-  - **High-Risk-Bereich** ({{HIGH_RISK_AREAS}}) beruehrt? Dann DoD verschaerfen (Schritt 5).
-  - **Plan vorab skizzieren?** Optional; bei "nein" bleibt `## Plan` Platzhalter fuer `/start-task`.
+  - **Project + milestone**: default from config; milestone only if one fits.
+  - **Labels**: exactly one of `parallel-safe` OR `single-writer:<area>` is mandatory. Area unclear -> ask the user.
+  - **Relations**: parent / blocked-by / blocks? If not settable via `save_issue`: note in `## Setup` as `Blocked by: <issuePrefix>-XXX`.
+  - **High-risk area** (`config.areas.highRisk`) touched? Then tighten the DoD (step 5).
+  - **Sketch the plan now?** Optional; if "no", `## Plan` stays a placeholder for `/start-task`.
 
-## Schritt 5 - Description nach Repo-Template komponieren
+## Step 5 - Compose the description from the template
 
-Baue die komplette Description nach dem Pflicht-Template (AGENTS.md Sektion "Task-Lifecycle"):
+Build the complete description following the mandatory template:
 
 ```markdown
 ## Plan
-<falls in Schritt 4 grob geplant: hier rein; sonst: "TBD - wird im /start-task befuellt">
+<if roughly planned in step 4: here; otherwise: "TBD - will be filled by /start-task">
 
 ## Acceptance Criteria
 - [ ] AC #1
 - [ ] AC #2
 
 ## Definition of Done
-- [ ] {{BUILD_CHECKS}} exit 0
-- [ ] Acceptance Criteria erfuellt + abgehakt
-- [ ] Keine unautorisierten Side-Effects (Cronjobs/Webhooks/destruktive Skripte)
-- [ ] High-Risk-Bereiche ({{HIGH_RISK_AREAS}}) verifiziert
-- [ ] Keine Secrets im Code
-- [ ] Single-Writer-Lock geprueft (parallel-safe oder Lock-frei zur Merge-Zeit)
-- [ ] 3-fach-Ensemble-Review durchgefuehrt
-- [ ] PR-Base = {{BASE_BRANCH}}
-{{PROJECT_EXTRA_DOD}}
+- [ ] <config.gates.build> exit 0
+- [ ] Acceptance criteria fulfilled + checked off
+- [ ] No unauthorized side effects (cronjobs/webhooks/destructive scripts)
+- [ ] High-risk areas (<config.areas.highRisk>) verified
+- [ ] No secrets in the code
+- [ ] Single-writer lock checked (parallel-safe or lock-free at merge time)
+- [ ] <config.review.ensembleSize>x ensemble review executed
+- [ ] PR base = <config.git.baseBranch>
+<one checkbox line per entry in config.extraDoD>
 
 ## Setup
-- Worktree: <wird in /start-task gesetzt>
-- Single-Writer-Lock: <parallel-safe | single-writer:<bereich>>
-- Blocked by: <{{ISSUE_PREFIX}}-XXX, falls vorhanden>
+- Worktree: <set by /start-task>
+- Single-writer lock: <parallel-safe | single-writer:<area>>
+- Blocked by: <issuePrefix>-XXX (if any)
 
 ## Final Summary
-<wird vor State=Done gesetzt>
+<set before state=Done>
 ```
 
-Vor dem Create: dem User im PlanMode den **vollstaendigen Body + Metadata** (Titel, Project, Milestone, Labels, Priority, Relations) zeigen. Aenderungswunsch -> zurueck zu Schritt 4.
+Before creating: show the user the **full body + metadata** (title, project, milestone, labels, priority, relations) in PlanMode. On change requests go back to step 4 - no silent adjustments.
 
-## Schritt 6 - ExitPlanMode
+## Step 6 - ExitPlanMode
 
-Praesentiere via `ExitPlanMode` eine kompakte Uebersicht zur Freigabe: Titel, Project + Milestone, Priority, Labels (parallel-safe vs. single-writer hervorheben), Anzahl AC + DoD-Items, Konflikt-Status (1 Satz), kompletter Description-Body als Markdown-Block.
+Present a compact overview for approval via `ExitPlanMode`: title, project + milestone, priority, labels (highlight parallel-safe vs. single-writer), number of AC + DoD items, conflict status (one sentence), the complete description body in a markdown block.
 
-Hinweis am Ende: "Nach Approval wird das Issue via `save_issue` (ohne `id`) im Backlog angelegt. Es wird **nicht** auf `In Progress` gesetzt - das macht erst `/start-task {{ISSUE_PREFIX}}-XXX`."
+Closing note: "After approval the issue is created via `save_issue` (without `id`) in the backlog. It is **not** set to `In Progress` - that happens via `/start-task <issuePrefix>-XXX`."
 
-## Schritt 7 - Nach Approval: Issue anlegen
+## Step 7 - After approval: create the issue
 
-1. `mcp__plugin_linear_linear__save_issue` **ohne `id`** (Create-Modus): `team="{{LINEAR_TEAM}}"`, `title`, `description` (kompletter Body), `project` (falls gesetzt), `milestone` (falls vergeben), `priority`, `labels`, `state` = Default-Backlog-State. `assignee` nur auf expliziten User-Wunsch.
-2. **Erfolg verifizieren**: vergebenen Identifier extrahieren, mit `get_issue` nachlesen. Fehlen Sektionen/Labels: patchen via erneutem `save_issue`.
-3. **Relations**, die nicht via `save_issue` setzbar waren: als Comment notieren (`save_comment`) + Hinweis im User-Output, dass die Verlinkung in der Linear-UI geklickt werden muss.
+1. `save_issue` **without `id`** (create mode): `team` from config, `title`, `description` (full body), `project` (if set), `milestone` (if assigned), `priority`, `labels`, `state` = the team's default backlog state. `assignee` only on explicit user request.
+2. **Verify success**: extract the assigned identifier, re-read with `get_issue`. If sections/labels are missing: patch via another `save_issue`.
+3. **Relations** that were not settable via `save_issue`: note them in a comment (`save_comment`) + tell the user the link still needs a click in the Linear UI.
 
-## Schritt 8 - Abschluss-Output an den User
+## Step 8 - Final output to the user
 
 ```
-Issue angelegt: {{ISSUE_PREFIX}}-XXX - <Titel>
-URL: <Linear-URL>
+Issue created: <issuePrefix>-XXX - <title>
+URL: <Linear URL>
 
-Project: <Name oder ->
-Milestone: <Name oder ->
-Priority: <Wert>
-Labels: <Liste>
-Konflikt-Status: <kurz>
+Project: <name or ->
+Milestone: <name or ->
+Priority: <value>
+Labels: <list>
+Conflict status: <short>
 
-Naechster Schritt (optional):
-/start-task {{ISSUE_PREFIX}}-XXX   - Worktree anlegen + Plan-Mode fuer Implementation
+Next step (optional):
+/start-task <issuePrefix>-XXX   - create worktree + plan mode for implementation
 ```
 
-Hatte die Konflikt-Tabelle Treffer und der User legt trotzdem an: Konflikte am Ende nochmal listen + Begruendung wiederholen (Session-History).
+If the conflict table had hits and the user decided to create the issue anyway: list the conflicts again at the end with the reasoning (session history).
 
-## Harte Regeln
+## Hard rules
 
-- Keine Code-Aenderungen, keine Branch-/Worktree-Erstellung, kein Build-/Setup-Run in diesem Command. Reines Linear-MCP-Drafting.
-- KEIN State="In Progress", KEIN `assignee="me"` ohne expliziten User-Wunsch.
-- Labels NUR aus dem Ergebnis von `list_issue_labels team="{{LINEAR_TEAM}}"` referenzieren; neue Labels nur nach User-OK via `create_issue_label`.
-- Description IMMER nach dem Template - keine eigene Struktur erfinden.
-- Deckt ein existierendes Issue das Thema ab: standardmaessig **kein** neues Issue, sondern User entscheiden lassen.
-- Bei Unsicherheit ueber den Bereich: lieber `single-writer:<bereich>` als faelschlich `parallel-safe`.
-- Tool-Calls parallelisieren (Schritt 2 + 3 in einer Batch).
+- No code changes, no branch/worktree creation, no build/setup runs in this command. Pure Linear MCP drafting.
+- NO state="In Progress", NO `assignee="me"` without an explicit user request.
+- Reference labels ONLY from the `list_issue_labels team="..."` result; new labels only after user approval via `create_issue_label`.
+- Description ALWAYS follows the template - do not invent your own structure.
+- If an existing issue covers the topic: by default create **no** new issue; let the user decide.
+- When unsure about the area: prefer `single-writer:<area>` over a wrong `parallel-safe`.
+- Parallelize tool calls (steps 2 + 3 in one batch).
