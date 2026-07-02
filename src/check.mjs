@@ -4,71 +4,101 @@ import {
   CLI_VERSION,
   MARKER_BEGIN,
   MARKER_END,
+  CONFIG_FILENAME,
   loadConfig,
   loadManifest,
   validateConfig,
   compareSemver,
 } from "./config.mjs";
-import { sha256, GENERATED_FILES } from "./generate.mjs";
+import {
+  sha256,
+  GENERATED_FILES,
+  renderAgentsBlock,
+  agentsMarkerState,
+} from "./generate.mjs";
 
+// The doctor must never crash on the broken states it exists to diagnose: every
+// load is guarded and turned into a FAIL line instead of an exception.
 export function runCheck(root) {
   const problems = [];
   const infos = [];
 
-  const config = loadConfig(root);
-  if (!config) {
-    console.error("check: no dienstweg.config.json found - run `npx dienstweg init` first.");
+  let config;
+  try {
+    config = loadConfig(root);
+  } catch (e) {
+    console.error(`FAIL  config: ${e.message}`);
+    console.error("check: 1 problem(s) found.");
     return 1;
   }
-  problems.push(...validateConfig(config).map((p) => `config: ${p}`));
-
-  const cmp = compareSemver(config.dienstwegVersion, CLI_VERSION);
-  if (cmp < 0) {
-    infos.push(`update available: project is on v${config.dienstwegVersion}, CLI is v${CLI_VERSION} - run \`npx dienstweg update\`.`);
-  } else if (cmp > 0) {
-    problems.push(`project was set up with v${config.dienstwegVersion} but this CLI is older (v${CLI_VERSION}) - update the dienstweg repo (git pull).`);
+  if (!config) {
+    console.error("check: no dienstweg.config.json found - run `dienstweg init` first.");
+    return 1;
   }
 
-  const manifest = loadManifest(root);
-  if (!manifest) {
-    problems.push("state: .dienstweg/manifest.json missing - run `npx dienstweg update` to regenerate.");
-  } else {
-    for (const [target, hash] of Object.entries(manifest.files)) {
+  problems.push(...validateConfig(config).map((p) => `config: ${p}`));
+
+  if (config.dienstwegVersion) {
+    const cmp = compareSemver(config.dienstwegVersion, CLI_VERSION);
+    if (cmp < 0) {
+      infos.push(`update available: project is on v${config.dienstwegVersion}, CLI is v${CLI_VERSION} - run \`dienstweg update\`.`);
+    } else if (cmp > 0) {
+      problems.push(`project was set up with v${config.dienstwegVersion} but this CLI is older (v${CLI_VERSION}) - update the dienstweg repo (git pull).`);
+    }
+  }
+
+  let manifest;
+  try {
+    manifest = loadManifest(root);
+  } catch (e) {
+    problems.push(`state: ${e.message} - run \`dienstweg update\` to regenerate.`);
+  }
+
+  if (manifest === null) {
+    problems.push("state: .dienstweg/manifest.json missing - run `dienstweg update` to regenerate.");
+  } else if (manifest) {
+    const files = manifest.files || {};
+    for (const [target, hash] of Object.entries(files)) {
       const p = join(root, target);
       if (!existsSync(p)) {
         problems.push(`generated file missing: ${target}`);
       } else if (sha256(readFileSync(p, "utf8")) !== hash) {
-        problems.push(`generated file was hand-edited: ${target} - generated files are tool-owned; move customizations to dienstweg.config.json or dienstweg.local.md, then run \`npx dienstweg update --force\`.`);
+        problems.push(`generated file was hand-edited: ${target} - generated files are tool-owned; move customizations to ${CONFIG_FILENAME} or dienstweg.local.md, then run \`dienstweg update --force\`.`);
       }
     }
     for (const spec of GENERATED_FILES) {
-      if (!manifest.files[spec.target]) {
-        problems.push(`unmanaged: ${spec.target} is not tracked by dienstweg (a pre-existing file was skipped during init/update) - adopt the dienstweg version via \`npx dienstweg update --force\` or move the custom content to dienstweg.local.md.`);
+      if (!files[spec.target]) {
+        problems.push(`unmanaged: ${spec.target} is not tracked by dienstweg (a pre-existing file was skipped during init/update) - adopt the dienstweg version via \`dienstweg update --force\` or move the custom content to dienstweg.local.md.`);
       }
     }
   }
 
-  const settingsPath = join(root, ".claude", "settings.json");
-  let hookWired = false;
-  if (existsSync(settingsPath)) {
-    try {
-      const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-      hookWired = (settings?.hooks?.PreToolUse || []).some((entry) =>
-        (entry.hooks || []).some((h) => (h.command || "").includes("branch-guard.mjs")),
-      );
-    } catch {
-      problems.push("settings.json is not valid JSON.");
-    }
+  const hookWired = hookIsWired(root);
+  if (hookWired === "invalid") {
+    problems.push("settings.json is not valid JSON.");
+  } else if (!hookWired) {
+    problems.push("branch-guard hook is not wired in .claude/settings.json or .claude/settings.local.json.");
   }
-  if (!hookWired) problems.push("branch-guard hook is not wired in .claude/settings.json.");
 
   const agentsPath = join(root, "AGENTS.md");
   if (!existsSync(agentsPath)) {
     problems.push("AGENTS.md missing.");
   } else {
     const content = readFileSync(agentsPath, "utf8");
-    if (!content.includes(MARKER_BEGIN) || !content.includes(MARKER_END)) {
-      problems.push("AGENTS.md has no dienstweg marker block.");
+    const state = agentsMarkerState(content);
+    if (!state.ok) {
+      problems.push(`AGENTS.md markers corrupted: ${state.reason} - fix or remove them, then run \`dienstweg update\`.`);
+    } else if (!state.present) {
+      problems.push("AGENTS.md has no dienstweg marker block - run `dienstweg update`.");
+    } else if (validateConfig(config).length === 0) {
+      // Compare the on-disk block against a fresh render, catching both
+      // hand-edits inside the markers and staleness after a config change.
+      const begin = content.indexOf(MARKER_BEGIN);
+      const end = content.indexOf(MARKER_END) + MARKER_END.length;
+      const onDisk = content.slice(begin, end);
+      if (onDisk !== renderAgentsBlock(config)) {
+        problems.push("AGENTS.md dienstweg block is hand-edited or stale relative to the config - run `dienstweg update`.");
+      }
     }
   }
 
@@ -80,4 +110,28 @@ export function runCheck(root) {
   for (const p of problems) console.error(`FAIL  ${p}`);
   console.error(`check: ${problems.length} problem(s) found.`);
   return 1;
+}
+
+// Returns true (wired), false (not wired), or "invalid" (a settings file is not
+// valid JSON). Accepts wiring via settings.json or settings.local.json.
+function hookIsWired(root) {
+  let sawInvalid = false;
+  let wired = false;
+  for (const name of ["settings.json", "settings.local.json"]) {
+    const p = join(root, ".claude", name);
+    if (!existsSync(p)) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(p, "utf8"));
+    } catch {
+      sawInvalid = true;
+      continue;
+    }
+    const pre = parsed?.hooks?.PreToolUse;
+    if (Array.isArray(pre)) {
+      wired ||= pre.some((entry) => (entry?.hooks || []).some((h) => (h?.command || "").includes("branch-guard.mjs")));
+    }
+  }
+  if (wired) return true;
+  return sawInvalid ? "invalid" : false;
 }

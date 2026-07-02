@@ -43,24 +43,37 @@ const VALUE_FLAGS = {
   "--high-risk": "highRisk",
   "--single-writer": "singleWriter",
 };
+const BOOL_FLAGS = {
+  "--yes": ["yes", true],
+  "--force": ["force", true],
+  "--new": ["existing", false],
+  "--existing": ["existing", true],
+};
 
-function parseFlags(args) {
+const INIT_FLAGS = new Set([...Object.keys(VALUE_FLAGS), "--yes", "--new", "--existing"]);
+const UPDATE_FLAGS = new Set(["--force"]);
+
+function parseFlags(args, allowed) {
   const flags = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--yes") flags.yes = true;
-    else if (arg === "--force") flags.force = true;
-    else if (arg === "--new") flags.existing = false;
-    else if (arg === "--existing") flags.existing = true;
-    else if (VALUE_FLAGS[arg]) {
+    if (!allowed.has(arg)) {
+      throw new Error(`unknown or unsupported flag for this command: ${arg} (see \`dienstweg help\`)`);
+    }
+    if (BOOL_FLAGS[arg]) {
+      const [key, value] = BOOL_FLAGS[arg];
+      flags[key] = value;
+    } else {
       const value = args[++i];
       if (value === undefined) throw new Error(`flag ${arg} needs a value`);
       flags[VALUE_FLAGS[arg]] = value;
-    } else {
-      throw new Error(`unknown flag: ${arg} (see \`dienstweg help\`)`);
     }
   }
   return flags;
+}
+
+function rejectArgs(command, rest) {
+  if (rest.length) throw new Error(`\`dienstweg ${command}\` takes no arguments (got: ${rest.join(" ")})`);
 }
 
 export async function run(argv) {
@@ -69,12 +82,13 @@ export async function run(argv) {
 
   switch (command) {
     case "init":
-      process.exitCode = await runInit(root, parseFlags(rest));
+      process.exitCode = await runInit(root, parseFlags(rest, INIT_FLAGS));
       break;
     case "update":
-      process.exitCode = runUpdate(root, parseFlags(rest));
+      process.exitCode = runUpdate(root, parseFlags(rest, UPDATE_FLAGS));
       break;
     case "check":
+      rejectArgs("check", rest);
       process.exitCode = runCheck(root);
       break;
     case "version":
