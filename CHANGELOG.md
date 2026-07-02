@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.1 (2026-07-02)
+
+Hardening release after a 3-reviewer ensemble review of v0.1.0.
+
+- branch-guard rewritten: segment-based parsing instead of positional regex. Fixes accidental bypasses (`git push -u origin main` and any flag before the branch, `git commit -n`, refspec pushes `HEAD:main` / `+main` / `:main` / `refs/heads/main`, `git -C <dir> push`, quoted arguments like `"main"`) and false positives (`main-hotfix` and other branches sharing a protected prefix, force-push detection spanning `&&` into a legitimate `git checkout main`, `gh pr create --base=main` / `-B main` / quoted base, `--help`). Honestly documented as a guardrail, not a sandbox.
+- `check` no longer crashes on the broken states it exists to diagnose (malformed config/manifest JSON, missing version stamp, manifest without `files`); each becomes a FAIL line. It now also detects a hand-edited or stale AGENTS block (by re-rendering from the config), corrupted/duplicate markers, and hook wiring in `settings.local.json`.
+- `update` validates the config before regenerating (no more `undefined` rendered into artifacts), refuses a newer-than-supported schemaVersion, throws on a missing migration path instead of silently down-stamping, and leaves the version stamp untouched when files were skipped.
+- `mergeSettings` tolerates a malformed-shape `hooks.PreToolUse` (not just invalid JSON) and no longer crashes init/update.
+- `upsertAgentsBlock` refuses to append into a file with corrupted markers instead of duplicating or deleting content.
+- init emits the onboarding prompt whenever files were skipped (not only for detected existing projects), git-ignores the prompt, prints which files to commit, and validates answers.
+- Per-command flag allowlists; `issuePrefix` validated against the Linear key format; CRLF-tolerant frontmatter detection; `compareSemver` ignores prerelease/build suffixes; `dienstweg.local.md` no longer resurrected by `update`.
+- Docs: removed the file-based-backlog leftover ("as the last commit on the branch"); clarified the post-merge base sync happens in the main working copy, not the task worktree; the issue-description template now lives canonically in the AGENTS block; `npm link` install path; softened the enforcement claims to match reality.
+
 ## v0.1.0 (2026-07-02)
 
 Initial release of the config-driven model.

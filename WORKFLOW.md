@@ -59,7 +59,7 @@ Exactly one per issue: `parallel-safe` (touches no hot area) or `single-writer:<
 2. Plan BEFORE code into the description (`## Plan`), structured via `/start-task`.
 3. During work: check off AC boxes via description patches, add notes as comments, update the plan as needed.
 4. Scope changes: ask or create a follow-up issue - never silently.
-5. Backlog discipline BEFORE the merge (otherwise lost, `--delete-branch` removes the branch): all AC + DoD boxes checked, `## Final Summary` with merge-SHA placeholder + PR number, `state="In Review"` - as the last commit on the feature branch.
+5. Backlog discipline BEFORE the PR is merged: all AC + DoD boxes checked, `## Final Summary` with merge-SHA placeholder + PR number, `state="In Review"`. These are Linear description patches, not git commits - do them before the merge so the review gate sees a complete issue.
 6. Ensemble review (section 6) including direct fixes and re-review rounds.
 7. Auto-merge (section 7) including the post-merge sync step.
 8. Close out: `state="Done"` + finalize `## Final Summary` (real merge SHA, review rounds, follow-up issues).
@@ -78,7 +78,7 @@ Exactly one per issue: `parallel-safe` (touches no hot area) or `single-writer:<
 
 ## 7. Auto-merge
 
-After a clean review loop the agent merges autonomously: `gh pr merge <N> --squash --delete-branch`, reporting merge SHA + PR URL. Then, never skipped:
+After a clean review loop the agent merges autonomously: `gh pr merge <N> --squash --delete-branch`, reporting merge SHA + PR URL. Then, never skipped, in the MAIN working copy (not the task worktree - git refuses to check out a branch already checked out elsewhere, and `--delete-branch` may report "already used by worktree", which is not a merge failure):
 
 ```
 git checkout <git.baseBranch> && git pull --ff-only

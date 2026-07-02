@@ -11,7 +11,7 @@ export function collectFindings(root) {
   for (const spec of GENERATED_FILES) {
     const p = join(root, spec.target);
     if (existsSync(p)) {
-      findings.push(`Pre-existing file at ${spec.target} - dienstweg did NOT overwrite it. Compare it with the dienstweg version and decide which one wins (adopt via \`npx dienstweg update --force\` or keep yours and remove it from dienstweg's scope).`);
+      findings.push(`Pre-existing file at ${spec.target} - dienstweg did NOT overwrite it. Compare it with the dienstweg version and decide which one wins (adopt via \`dienstweg update --force\` or keep yours and remove it from dienstweg's scope).`);
     }
   }
 
@@ -91,7 +91,7 @@ ${f}
    - project wins: encode the project rule in dienstweg.config.json (extraDoD, extraConstraints, areas, gates) or dienstweg.local.md.
    - user decides: present the trade-off and ask.
 3. Present the report to the user BEFORE changing anything. Apply the agreed resolutions.
-4. Verify: run \`npx dienstweg check\` from the repo root and fix whatever it reports until it passes.
+4. Verify: run \`dienstweg check\` from the repo root and fix whatever it reports until it passes.
 5. Summarize what changed and what the user still has to do manually (e.g. create the Linear team "${config.tracker.linearTeam}" with key ${config.tracker.issuePrefix} and labels \`parallel-safe\` + \`single-writer:<area>\` if they do not exist yet).
 
 Do not start implementing feature work. This session is only about workflow onboarding.`;

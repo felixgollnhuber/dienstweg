@@ -23,7 +23,11 @@ export function manifestPath(root) {
 export function loadConfig(root) {
   const p = configPath(root);
   if (!existsSync(p)) return null;
-  return JSON.parse(readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch (e) {
+    throw new Error(`${CONFIG_FILENAME} is not valid JSON: ${e.message}`);
+  }
 }
 
 export function writeConfig(root, config) {
@@ -33,8 +37,14 @@ export function writeConfig(root, config) {
 export function loadManifest(root) {
   const p = manifestPath(root);
   if (!existsSync(p)) return null;
-  return JSON.parse(readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch (e) {
+    throw new Error(`${STATE_DIR}/${MANIFEST_FILENAME} is not valid JSON: ${e.message}`);
+  }
 }
+
+export const ISSUE_PREFIX_RE = /^[A-Z][A-Z0-9]*$/;
 
 export function defaultConfig(answers) {
   return {
@@ -82,6 +92,7 @@ const REQUIRED_PATHS = [
   ["areas", "singleWriter"],
   ["review", "ensembleSize"],
   ["review", "maxRounds"],
+  ["review", "subagentType"],
 ];
 
 export function validateConfig(config) {
@@ -91,13 +102,15 @@ export function validateConfig(config) {
     for (const key of path) {
       node = node?.[key];
     }
-    if (node === undefined || node === null) {
-      if (!(path[0] === "tracker" && path[1] === "defaultProject")) {
-        problems.push(`missing field: ${path.join(".")}`);
-      }
+    if (node === undefined || node === null || node === "") {
+      problems.push(`missing field: ${path.join(".")}`);
     }
   }
-  if (config.schemaVersion > CURRENT_SCHEMA_VERSION) {
+  const prefix = config?.tracker?.issuePrefix;
+  if (prefix && !ISSUE_PREFIX_RE.test(prefix)) {
+    problems.push(`tracker.issuePrefix "${prefix}" is invalid - must match ${ISSUE_PREFIX_RE} (a Linear team key, e.g. FAC).`);
+  }
+  if (typeof config?.schemaVersion === "number" && config.schemaVersion > CURRENT_SCHEMA_VERSION) {
     problems.push(
       `config schemaVersion ${config.schemaVersion} is newer than this CLI supports (${CURRENT_SCHEMA_VERSION}). Update the dienstweg repo (git pull).`,
     );
@@ -105,9 +118,13 @@ export function validateConfig(config) {
   return problems;
 }
 
+// Compares plain semver cores (x.y.z), ignoring any -prerelease/+build suffix.
+// Missing/empty input is treated as 0.0.0 so callers never crash on a config
+// that is missing its version stamp.
 export function compareSemver(a, b) {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
+  const core = (v) => String(v ?? "0.0.0").split(/[-+]/)[0].split(".").map((n) => Number(n) || 0);
+  const pa = core(a);
+  const pb = core(b);
   for (let i = 0; i < 3; i++) {
     if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
   }
