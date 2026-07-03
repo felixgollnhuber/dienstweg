@@ -1,62 +1,156 @@
+<div align="center">
+
 # dienstweg
 
-Config-driven task workflow framework for agent-assisted development (Claude Code + Linear + GitHub). *Immer schoen den Dienstweg einhalten.*
+**Make coding agents follow proper procedure.**
 
-One Linear issue is the single source of truth per task. Two slash commands structure the way in (`/create-issue`) and through (`/start-task` -> `/goal` loop), an ensemble review and hard auto-merge gates protect quality, and a PreToolUse hook guards the git rules. The hook is a guardrail against common accidental violations (wrong PR base, push to a protected branch, `--no-verify`, force push), not a security sandbox - deliberate obfuscation can bypass it, and that is fine.
+A config-driven task workflow for agent-assisted development. One Linear issue as the source of truth, an ensemble review before every merge, and a git guardrail that stops the mistakes before they land — installed into any repo with one command, updatable across all of them with one more.
 
-The key design decision: **configuration instead of instantiation**. The commands and the hook are generic and read `dienstweg.config.json` at runtime. Generated files are tool-owned (never hand-edited), so `dienstweg update` is a conflict-free overwrite - workflow updates roll out to every adopting repo with one command.
+![version](https://img.shields.io/badge/version-0.1.3-2563eb?style=flat-square)
+![node](https://img.shields.io/badge/node-%E2%89%A520-3fb950?style=flat-square)
+![dependencies](https://img.shields.io/badge/dependencies-0-3fb950?style=flat-square)
+![harness](https://img.shields.io/badge/Claude_Code_%2B_Linear_%2B_GitHub-1f2328?style=flat-square)
+![status](https://img.shields.io/badge/status-internal-6e7781?style=flat-square)
 
-## Install
+</div>
 
-Clone this repo and put `dienstweg` on your PATH once:
+---
 
-```
-git clone <dienstweg repo> && cd dienstweg && npm link
-```
+> **Dienstweg** *(German, der)* — the official channels; the proper procedure.
+> *„Immer schön den Dienstweg einhalten."* — always go through the proper channels.
 
-(`npm link` makes the `dienstweg` command global with no dependencies to install. Alternatively run `node /path/to/dienstweg/bin/dienstweg.mjs` directly. The package is currently private/unpublished, so there is no `npx dienstweg` from the registry yet.)
+That is the entire philosophy. An agent with shell access will cheerfully `git push --force origin main`, open a PR against the wrong branch, or declare a task "done" with no review and half the acceptance criteria unchecked. dienstweg installs the proper channels — plans in the issue, review before merge, protected branches — and makes routing around them the hard path instead of the default one.
 
-## Adopt
+## The idea in 30 seconds
 
-From the target repo's root:
-
-```
-dienstweg init          # interactive interview
-dienstweg init --yes    # non-interactive, defaults + flags
-```
-
-`init` asks: existing project or fresh repo, project name, conversation language (default en), Linear team/prefix, base branch, build gates, high-risk and single-writer areas. It writes:
-
-- `dienstweg.config.json` - the single source of project values (the only file you edit)
-- `.claude/commands/create-issue.md`, `.claude/commands/start-task.md` - generic commands (tool-owned)
-- `.claude/hooks/branch-guard.mjs` + a merged hook entry in `.claude/settings.json`
-- a marker block in `AGENTS.md` (`<!-- dienstweg:begin/end -->`) + `CLAUDE.md` as `@AGENTS.md` import if absent
-- `dienstweg.local.md` - project-owned stub for rules the config cannot express
-- `.dienstweg/manifest.json` - hashes of tool-owned files (hand-edit detection)
-
-For **existing projects** (or when `init` had to skip a colliding file), it additionally emits a self-contained **onboarding prompt** (printed + saved to `.dienstweg/onboarding-prompt.md`, which is git-ignored automatically): paste it into Claude Code or Codex and the agent audits the repo for rules that contradict the workflow (CLAUDE.md, CONTRIBUTING, CI, hooks), proposes resolutions, and verifies the setup with `dienstweg check`.
-
-Commit these files after init: `dienstweg.config.json`, `dienstweg.local.md`, `.claude/` (commands, hook, settings.json), and `.dienstweg/manifest.json`. If the hook and settings are not committed, a fresh clone has a silently inert guard; if the manifest is not committed, every teammate's `check` reports it missing.
-
-## Update
+Every task is a Linear issue with a real plan. Two slash commands walk the agent through it, a redundant review runs before anything merges, and a hook enforces the git rules at the moment of the mistake:
 
 ```
-dienstweg update           # regenerate tool-owned files, run config migrations
-dienstweg update --force   # also overwrite hand-edited / unmanaged generated files
-dienstweg check            # verify config, files, hook wiring, AGENTS block
+/create-issue   →   /start-task   →   /goal loop   →   ensemble review   →   auto-merge
+  draft the         plan into the      implement,        3 independent        only when every
+  issue, check      issue, claim it,   verify, open      reviewers, fix        gate is green,
+  for interference  emit the goal      the PR            the consensus         then sync base
 ```
 
-Versioning: dienstweg versions are semver git tags on this repo; every adopting repo carries a `dienstwegVersion` stamp in its config. Config schema changes ship as migrations in `migrations/index.mjs` and run automatically during `update`.
+The clever part is what makes it reusable: **the commands and the hook are generic and read a per-repo config file at runtime.** Nothing is hand-templated into your repo, so a workflow improvement ships to every adopting repo as a plain overwrite — no merge, no drift.
 
-## Contract
+## Quickstart
 
-- Tool-owned files (commands, hook) and the AGENTS marker block are **never hand-edited**. Customization goes into `dienstweg.config.json` (`extraDoD`, `extraConstraints`, `areas`, `gates`) or `dienstweg.local.md`. `check` flags hand-edited files (via manifest hashes) and a hand-edited or stale AGENTS block (by re-rendering it from the config).
-- The workflow itself is documented in [WORKFLOW.md](WORKFLOW.md).
+```bash
+# once: put `dienstweg` on your PATH (zero dependencies to install)
+git clone <this repo> && cd dienstweg && npm link
+
+# in any repo you want to adopt the workflow:
+cd ~/my-project
+dienstweg init
+```
+
+`init` runs a short interview — existing project or fresh repo, project name, language (English by default), Linear team & issue prefix, base branch, build gates, high-risk and single-writer areas — and writes everything it needs:
+
+```
+dienstweg v0.1.3 initialized for "my-project"
+  config:   dienstweg.config.json (team MyProject, prefix MYP, base main)
+  written:  .claude/commands/create-issue.md
+  written:  .claude/commands/start-task.md
+  written:  .claude/hooks/branch-guard.mjs
+  settings.json: added branch-guard PreToolUse hook
+  AGENTS.md: created with dienstweg block
+  CLAUDE.md: created as @AGENTS.md import
+  written:  dienstweg.local.md (project-owned stub)
+```
+
+Then create your first task from inside Claude Code:
+
+```
+/create-issue add rate limiting to the public API
+/start-task MYP-1
+```
+
+## Onboarding an existing repo (the interesting case)
+
+Dropping a workflow onto a repo that already has its own rules is where things usually break. dienstweg splits the job: **the CLI does the mechanical part, an agent does the semantic part.**
+
+`init` never overwrites a colliding file, then emits a self-contained **onboarding prompt** (printed and saved to `.dienstweg/onboarding-prompt.md`). You hand that prompt to Claude Code or Codex, and it audits the repo for rules that contradict the workflow — a different PR base in `CONTRIBUTING.md`, a competing commit convention in `CLAUDE.md`, a rival PreToolUse hook, CI branch filters — and proposes, per finding, one of three resolutions:
+
+- **dienstweg wins** — remove or adjust the old rule.
+- **project wins** — encode the exception in `dienstweg.config.json` or `dienstweg.local.md`.
+- **you decide** — it surfaces the trade-off and asks.
+
+Nothing changes until you approve. It finishes by running `dienstweg check` until the setup is clean.
+
+## How it works — configuration, not instantiation
+
+```
+your-repo/
+├── dienstweg.config.json     ← the only file you edit: team, prefix, base, gates, areas
+├── dienstweg.local.md        ← project-owned rules the config can't express
+├── AGENTS.md                 ← workflow block between <!-- dienstweg:begin/end --> markers
+├── CLAUDE.md                 ← @AGENTS.md import
+└── .claude/
+    ├── commands/             ← generic prompts, read the config at runtime  ┐
+    ├── hooks/branch-guard.mjs ← generic guard, reads the config at runtime  │ tool-owned,
+    └── settings.json         ← hook wired in (merged, never clobbered)      ┘ never edited
+.dienstweg/manifest.json      ← content hashes of the tool-owned files
+```
+
+Tool-owned files carry a `DO NOT EDIT` header and are tracked by hash. You never touch them — every customization goes through the config or `dienstweg.local.md`. Because of that contract, updates are trivial:
+
+```bash
+dienstweg update   # regenerate tool-owned files, run any config migrations, bump the stamp
+dienstweg check    # verify config, file hashes, hook wiring, and the AGENTS block
+```
+
+`check` is a real doctor: it re-renders the AGENTS block from your config to catch hand-edits *or* staleness, flags hand-edited generated files, detects corrupted markers and broken settings — and it never crashes on the broken states it exists to diagnose. Versions are semver git tags; schema changes ship as migrations that run automatically during `update`.
+
+## The guardrail (honest by design)
+
+`branch-guard` is a PreToolUse hook that blocks the everyday git mistakes at the moment they happen — and it tells you exactly why:
+
+```
+$ git push --force origin main
+[branch-guard] BLOCKED: git push --force to 'main' is destructive on a shared
+branch and requires explicit user authorization.
+```
+
+It catches the real forms agents actually emit: `git push -u origin main`, `HEAD:main`, `+main`, `:main`, `--delete main`, subshell `(git push origin main)`, `git -C dir push`, `git commit -n`, PRs against the wrong base — while staying quiet on the legitimate ones (`main-hotfix`, `--base=main`, the word "main" inside a commit message).
+
+It is deliberately **a guardrail against honest mistakes, not a security sandbox.** A determined bypass through obfuscation is always possible, and that is fine — the goal is to stop the slip, not to contain a hostile actor. The docs say so everywhere they can.
+
+## Command reference
+
+| Command | What it does |
+| --- | --- |
+| `dienstweg init` | Interactive setup. `--yes` for non-interactive; every question has a flag (`--name`, `--prefix`, `--team`, `--base`, `--gates`, `--high-risk`, `--single-writer`, `--new`/`--existing`). |
+| `dienstweg update` | Regenerate tool-owned files, run config migrations, bump the version stamp. `--force` also overwrites hand-edited files. |
+| `dienstweg check` | Verify the whole setup. Exit 0 = clean. |
+| `dienstweg version` · `help` | The obvious. |
+
+And inside Claude Code, from the installed commands:
+
+| Command | What it does |
+| --- | --- |
+| `/create-issue <topic>` | Draft a schema-conformant issue after an interference check. Creates the backlog issue only. |
+| `/start-task <PREFIX>-N` | Claim the issue, set up a worktree, plan it, and hand you a ready-to-run `/goal` condition. |
+
+## What's in the box
+
+- **Ensemble review** — three independent reviewers, identical broad scope, run before every merge. Consensus findings are high-signal and fixed directly; singletons are judged; conflicts are decided, not averaged. Re-review triggers on larger fix changes, capped at three rounds.
+- **Hard auto-merge gates** — base branch, green build, all DoD boxes checked, no open critical findings, review loop finished, no user override. Any gate red → it reports instead of merging.
+- **Single-source issues** — plan, acceptance criteria, definition of done, and final summary all live in the Linear issue. No local backlog files, no task state stranded in a chat.
+- **Parallelism labels** — `parallel-safe` vs. `single-writer:<area>` to keep concurrent agents off each other's hot files.
 
 ## Requirements
 
-Node >= 20, git, Claude Code v2.1.139+ (`/goal`), a Linear MCP server, `gh` CLI.
+Node ≥ 20 · git · [Claude Code](https://claude.com/claude-code) v2.1.139+ (for `/goal`) · a Linear MCP server · the `gh` CLI.
+
+The full workflow — issue schema, git conventions, review protocol, auto-merge gates, the `/goal` condition — is documented in [WORKFLOW.md](WORKFLOW.md).
 
 ## Origin
 
-Extracted and generalized from the [internal]/[internal] migration workflow (July 2026). Deliberately absent: session-rename choreography (removed).
+Extracted and generalized from the internal [internal] / [internal] migration workflow (July 2026), then rebuilt around the config-driven model so it could travel to any repo. Zero runtime dependencies, by design.
+
+---
+
+<div align="center">
+<sub>Internal tool · package is private / unpublished · no <code>npx dienstweg</code> from the registry (yet)</sub>
+</div>
