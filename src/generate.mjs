@@ -54,6 +54,16 @@ export function renderAgentsBlock(config) {
   const raw = readFileSync(join(TEMPLATES_DIR, "agents-block.md"), "utf8");
   const listOrDash = (arr) => (arr && arr.length ? arr.join(", ") : "-");
   const extraDoD = (config.extraDoD || []).map((line) => `- [ ] ${line}`).join("\n");
+  const autoMerge = config.merge?.auto;
+  if (typeof autoMerge !== "boolean") {
+    throw new Error('cannot render AGENTS block: config value for "merge.auto" is missing or not a boolean. Run `dienstweg check`.');
+  }
+  // The two policies differ in behavior, not just wording, so the whole
+  // paragraph is composed here instead of token-patched in the template.
+  const mergeGates = `PR base = \`${config.git.baseBranch}\`, \`${config.gates.build}\` exit 0 after the last fix commits, no open DoD boxes (check via \`get_issue\` before merging), no open majority critical findings, re-review loop finished`;
+  const mergePolicy = autoMerge
+    ? `**Auto-merge (on, \`merge.auto: true\`):** after a clean review loop, merge autonomously - no asking. Gates (all mandatory): ${mergeGates}, no user override ("do not merge automatically" holds for the whole session). Gate violated -> do not merge, report status.`
+    : `**Auto-merge (off, \`merge.auto: false\`):** NEVER merge autonomously. After a clean review loop: check off the DoD boxes, write \`## Final Summary\` (merge-SHA placeholder + PR number), set \`state="In Review"\`, then report the PR URL + gate status and stop - the merge is the user's decision. Merge only on an explicit user instruction; the gates (${mergeGates}) plus the post-merge base sync and the \`state="Done"\` close-out still apply then.`;
   const tokens = {
     version: CLI_VERSION,
     project: config.project,
@@ -68,6 +78,7 @@ export function renderAgentsBlock(config) {
     ensembleSize: String(config.review.ensembleSize),
     maxRounds: String(config.review.maxRounds),
     subagentType: config.review.subagentType,
+    mergePolicy,
     extraDoD: extraDoD ? `\n${extraDoD}` : "",
     extraConstraints: listOrDash(config.extraConstraints),
   };

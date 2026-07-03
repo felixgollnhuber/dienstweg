@@ -69,7 +69,7 @@ export async function runInit(root, flags) {
   const needsAudit = answers.existing || skipped.length > 0;
 
   console.log(`dienstweg v${CLI_VERSION} initialized for "${config.project}"`);
-  console.log(`  config:   dienstweg.config.json (team ${config.tracker.linearTeam}, prefix ${config.tracker.issuePrefix}, base ${config.git.baseBranch})`);
+  console.log(`  config:   dienstweg.config.json (team ${config.tracker.linearTeam}, prefix ${config.tracker.issuePrefix}, base ${config.git.baseBranch}${config.merge.auto ? "" : ", auto-merge off"})`);
   for (const target of Object.keys(manifest.files)) console.log(`  written:  ${target}`);
   for (const target of skipped) console.log(`  SKIPPED:  ${target} (pre-existing, not overwritten)`);
   console.log(`  ${settingsAction.message}`);

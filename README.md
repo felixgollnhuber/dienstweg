@@ -6,7 +6,7 @@
 
 A config-driven task workflow for agent-assisted development. One Linear issue as the source of truth, an ensemble review before every merge, and a git guardrail that stops the mistakes before they land — installed into any repo with one command, updatable across all of them with one more.
 
-![version](https://img.shields.io/badge/version-0.1.3-2563eb?style=flat-square)
+![version](https://img.shields.io/badge/version-0.2.0-2563eb?style=flat-square)
 ![node](https://img.shields.io/badge/node-%E2%89%A520-3fb950?style=flat-square)
 ![dependencies](https://img.shields.io/badge/dependencies-0-3fb950?style=flat-square)
 ![harness](https://img.shields.io/badge/Claude_Code_%2B_Linear_%2B_GitHub-1f2328?style=flat-square)
@@ -45,10 +45,10 @@ cd ~/my-project
 dienstweg init
 ```
 
-`init` runs a short interview — existing project or fresh repo, project name, language (English by default), Linear team & issue prefix, base branch, build gates, high-risk and single-writer areas — and writes everything it needs:
+`init` runs a short interview — existing project or fresh repo, project name, language (English by default), Linear team & issue prefix, base branch, build gates, auto-merge on/off, high-risk and single-writer areas — and writes everything it needs:
 
 ```
-dienstweg v0.1.3 initialized for "my-project"
+dienstweg v0.2.0 initialized for "my-project"
   config:   dienstweg.config.json (team MyProject, prefix MYP, base main)
   written:  .claude/commands/create-issue.md
   written:  .claude/commands/start-task.md
@@ -82,7 +82,7 @@ Nothing changes until you approve. It finishes by running `dienstweg check` unti
 
 ```
 your-repo/
-├── dienstweg.config.json     ← the only file you edit: team, prefix, base, gates, areas
+├── dienstweg.config.json     ← the only file you edit: team, prefix, base, gates, areas, merge
 ├── dienstweg.local.md        ← project-owned rules the config can't express
 ├── AGENTS.md                 ← workflow block between <!-- dienstweg:begin/end --> markers
 ├── CLAUDE.md                 ← @AGENTS.md import
@@ -120,7 +120,7 @@ It is deliberately **a guardrail against honest mistakes, not a security sandbox
 
 | Command | What it does |
 | --- | --- |
-| `dienstweg init` | Interactive setup. `--yes` for non-interactive; every question has a flag (`--name`, `--prefix`, `--team`, `--base`, `--gates`, `--high-risk`, `--single-writer`, `--new`/`--existing`). |
+| `dienstweg init` | Interactive setup. `--yes` for non-interactive; every question has a flag (`--name`, `--prefix`, `--team`, `--base`, `--gates`, `--auto-merge`/`--no-auto-merge`, `--high-risk`, `--single-writer`, `--new`/`--existing`). |
 | `dienstweg update` | Regenerate tool-owned files, run config migrations, bump the version stamp. `--force` also overwrites hand-edited files. |
 | `dienstweg check` | Verify the whole setup. Exit 0 = clean. |
 | `dienstweg version` · `help` | The obvious. |
@@ -135,7 +135,7 @@ And inside Claude Code, from the installed commands:
 ## What's in the box
 
 - **Ensemble review** — three independent reviewers, identical broad scope, run before every merge. Consensus findings are high-signal and fixed directly; singletons are judged; conflicts are decided, not averaged. Re-review triggers on larger fix changes, capped at three rounds.
-- **Hard auto-merge gates** — base branch, green build, all DoD boxes checked, no open critical findings, review loop finished, no user override. Any gate red → it reports instead of merging.
+- **Hard auto-merge gates** — base branch, green build, all DoD boxes checked, no open critical findings, review loop finished, no user override. Any gate red → it reports instead of merging. Auto-merge itself is a config switch (`merge.auto`, default on): off means the agent stops at *In Review* and hands the merge to you.
 - **Single-source issues** — plan, acceptance criteria, definition of done, and final summary all live in the Linear issue. No local backlog files, no task state stranded in a chat.
 - **Parallelism labels** — `parallel-safe` vs. `single-writer:<area>` to keep concurrent agents off each other's hot files.
 

@@ -7,7 +7,7 @@ You are preparing the Linear issue `$ARGUMENTS` for implementation. Goal: worktr
 
 ## Step 0 - Load the project config
 
-- Read `dienstweg.config.json` at the repo root. All `config.*` references below come from this file. Key values: `config.tracker.issuePrefix`, `config.tracker.linearTeam`, `config.git.baseBranch`, `config.gates.build`, `config.areas.highRisk`, `config.areas.singleWriter`, `config.review.*`, `config.extraConstraints`.
+- Read `dienstweg.config.json` at the repo root. All `config.*` references below come from this file. Key values: `config.tracker.issuePrefix`, `config.tracker.linearTeam`, `config.git.baseBranch`, `config.gates.build`, `config.areas.highRisk`, `config.areas.singleWriter`, `config.review.*`, `config.merge.auto`, `config.extraConstraints`.
 - Read `dienstweg.local.md` if it exists - its rules apply in addition to this command.
 - Respond to the user in `config.language`.
 - Use the Linear MCP tools (`get_issue`, `save_issue`, `list_issues`, ... - the tool prefix depends on the installed Linear MCP server).
@@ -104,6 +104,8 @@ The `/goal` command (Claude Code v2.1.139+) is a session-scoped stop hook: after
 If the issue touches a **high-risk area** (`config.areas.highRisk`), add to the constraints: `smaller commits, intermediate verification after every destructive data operation`.
 
 If a `single-writer:<area>` label is active, add: `no parallel edits to <area> hot files while another issue is In Progress`.
+
+If `config.merge.auto` is **false**, the loop must never run `gh pr merge`. Adjust the condition in two places: (1) change ``BEFORE `gh pr merge` `` to `BEFORE finishing`; (2) replace everything from ``auto-merge via `gh pr merge <N> --squash --delete-branch` `` up to and including the `state="Done"` clause with: `NO merge (merge.auto=false): AS THE LAST STEP BEFORE LOOP EXIT, after state="In Review" is set, report the PR URL and the gate status (base, build exit code, DoD boxes, open findings, review rounds) in a user message and stop - merging is the user's decision, do not run gh pr merge`. The `## Final Summary` keeps the merge-SHA placeholder; the user (or an explicitly instructed agent) merges later and closes out with `state="Done"` + the real SHA.
 
 ## Step 7 - ExitPlanMode
 

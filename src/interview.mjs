@@ -36,6 +36,7 @@ export async function runInterview(root, flags) {
     language: "en",
     baseBranch: "main",
     buildGates: "npm run build && npm test",
+    autoMerge: true,
     defaultProject: "",
     highRisk: [],
     singleWriter: [],
@@ -72,6 +73,11 @@ export async function runInterview(root, flags) {
     const defaultProject = flags.project ?? (await ask("Default Linear project (empty = team backlog)", defaults.defaultProject));
     const baseBranch = flags.base ?? (await ask("Base branch for PRs", defaults.baseBranch));
     const buildGates = flags.gates ?? (await ask("Build/test gate command(s)", defaults.buildGates));
+    const autoMerge = flags.autoMerge !== undefined
+      ? flags.autoMerge
+      : !(await ask("Auto-merge PRs when all gates are green? (yes/no)", defaults.autoMerge ? "yes" : "no"))
+          .toLowerCase()
+          .startsWith("n");
     const highRisk = flags.highRisk !== undefined
       ? parseList(flags.highRisk)
       : parseList(await ask("High-risk areas (comma-separated, empty = none)", ""));
@@ -89,6 +95,7 @@ export async function runInterview(root, flags) {
       defaultProject,
       baseBranch,
       buildGates,
+      autoMerge,
       highRisk,
       singleWriter,
     };

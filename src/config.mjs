@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 export const CONFIG_FILENAME = "dienstweg.config.json";
 export const STATE_DIR = ".dienstweg";
 export const MANIFEST_FILENAME = "manifest.json";
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 export const MARKER_BEGIN = "<!-- dienstweg:begin -->";
 export const MARKER_END = "<!-- dienstweg:end -->";
 
@@ -73,6 +73,9 @@ export function defaultConfig(answers) {
       maxRounds: 3,
       subagentType: "ensemble-reviewer",
     },
+    merge: {
+      auto: answers.autoMerge,
+    },
     extraDoD: [],
     extraConstraints: [],
   };
@@ -93,6 +96,7 @@ const REQUIRED_PATHS = [
   ["review", "ensembleSize"],
   ["review", "maxRounds"],
   ["review", "subagentType"],
+  ["merge", "auto"],
 ];
 
 export function validateConfig(config) {
@@ -109,6 +113,10 @@ export function validateConfig(config) {
   const prefix = config?.tracker?.issuePrefix;
   if (prefix && !ISSUE_PREFIX_RE.test(prefix)) {
     problems.push(`tracker.issuePrefix "${prefix}" is invalid - must match ${ISSUE_PREFIX_RE} (a Linear team key, e.g. FAC).`);
+  }
+  const autoMerge = config?.merge?.auto;
+  if (autoMerge !== undefined && autoMerge !== null && typeof autoMerge !== "boolean") {
+    problems.push(`merge.auto must be a boolean (true/false), got ${JSON.stringify(autoMerge)} - a string like "false" would be read as enabled.`);
   }
   if (typeof config?.schemaVersion === "number" && config.schemaVersion > CURRENT_SCHEMA_VERSION) {
     problems.push(

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.0 (2026-07-03)
+
+Auto-merge becomes a config switch.
+
+- New config key `merge.auto` (default `true` = previous behavior). With `false` the agent never merges autonomously: after a clean review loop it checks off the DoD boxes, writes the Final Summary (merge-SHA placeholder + PR number), sets `state="In Review"` and reports PR URL + gate status - the merge is the user's move, manually or by explicit instruction (gates, post-merge sync and `state="Done"` close-out still apply then). The AGENTS block and the `/goal` condition composed by `/start-task` both render/read the switch.
+- `dienstweg init` asks "Auto-merge PRs when all gates are green?" (default yes); non-interactive via `--auto-merge` / `--no-auto-merge`.
+- Config schema v2 with the first real migration: `dienstweg update` adds `merge.auto: true` to existing configs. `check` now hints at `dienstweg update` when the config schema is behind the CLI, and `validateConfig` rejects a non-boolean `merge.auto` (a string `"false"` would read as enabled).
+
 ## v0.1.3 (2026-07-02)
 
 Re-review round 3 (final; 0 critical). Fixed the two remaining broken-recovery-path bugs; the rest were nitpicks and are parked.
