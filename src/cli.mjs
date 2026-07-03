@@ -24,6 +24,8 @@ init flags (each skips the corresponding question):
   --project <name>      Default Linear project (default: none).
   --base <branch>       Base branch for PRs (default: main).
   --gates <cmd>         Build/test gate command (default: npm run build && npm test).
+  --auto-merge | --no-auto-merge
+                        Merge PRs autonomously when all gates are green (default: on).
   --high-risk <a,b>     High-risk areas, comma-separated.
   --single-writer <a,b> Single-writer areas, comma-separated.
 
@@ -48,9 +50,11 @@ const BOOL_FLAGS = {
   "--force": ["force", true],
   "--new": ["existing", false],
   "--existing": ["existing", true],
+  "--auto-merge": ["autoMerge", true],
+  "--no-auto-merge": ["autoMerge", false],
 };
 
-const INIT_FLAGS = new Set([...Object.keys(VALUE_FLAGS), "--yes", "--new", "--existing"]);
+const INIT_FLAGS = new Set([...Object.keys(VALUE_FLAGS), "--yes", "--new", "--existing", "--auto-merge", "--no-auto-merge"]);
 const UPDATE_FLAGS = new Set(["--force"]);
 
 function parseFlags(args, allowed) {

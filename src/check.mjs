@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   CLI_VERSION,
+  CURRENT_SCHEMA_VERSION,
   MARKER_BEGIN,
   MARKER_END,
   CONFIG_FILENAME,
@@ -37,6 +38,12 @@ export function runCheck(root) {
   }
 
   problems.push(...validateConfig(config).map((p) => `config: ${p}`));
+
+  // An outdated schema usually explains the missing-field FAILs above; point
+  // at the migration instead of leaving the user to add fields by hand.
+  if (typeof config.schemaVersion === "number" && config.schemaVersion < CURRENT_SCHEMA_VERSION) {
+    infos.push(`config schema v${config.schemaVersion} is behind v${CURRENT_SCHEMA_VERSION} - run \`dienstweg update\` to migrate.`);
+  }
 
   if (config.dienstwegVersion) {
     const cmp = compareSemver(config.dienstwegVersion, CLI_VERSION);

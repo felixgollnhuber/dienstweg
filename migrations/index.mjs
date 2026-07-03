@@ -13,4 +13,13 @@
 //   },
 // }
 
-export const migrations = [];
+export const migrations = [
+  {
+    toSchemaVersion: 2,
+    description: "add merge.auto - autonomous-merge switch (true preserves the previous behavior)",
+    migrate(config) {
+      config.merge ??= {};
+      config.merge.auto ??= true;
+    },
+  },
+];

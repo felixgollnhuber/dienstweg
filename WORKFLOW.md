@@ -8,7 +8,7 @@ Generic task workflow for agent-assisted development with Claude Code, Linear an
 2. **Plan before code.** No implementation commit before the plan is in the issue and approved. Non-negotiable.
 3. **Measurable gates instead of gut feeling.** Build/test commands with exit code 0, checked-off boxes, existing PRs - never conditions like "the code is clean".
 4. **Redundant review.** N independent review subagents (default 3) with an identical, broad scope. The value is the ensemble: consensus = high priority, singletons = judge critically, conflicts = decide explicitly.
-5. **Autonomous merge with hard gates.** After a clean review loop, merge without asking - but only when ALL gates are green. A user override ("do not merge automatically") holds for the whole session.
+5. **Autonomous merge with hard gates.** After a clean review loop, merge without asking - but only when ALL gates are green. A user override ("do not merge automatically") holds for the whole session. Configurable per repo: `merge.auto` (default `true`); when `false`, the agent stops at `state="In Review"` and reports instead of merging (section 7).
 6. **Machine-enforced rules.** Git conventions are not just documented; the branch-guard PreToolUse hook blocks violations.
 7. **Scope discipline.** Never widen scope silently - ask the user or create a follow-up issue.
 
@@ -61,7 +61,7 @@ Exactly one per issue: `parallel-safe` (touches no hot area) or `single-writer:<
 4. Scope changes: ask or create a follow-up issue - never silently.
 5. Backlog discipline BEFORE the PR is merged: all AC + DoD boxes checked, `## Final Summary` with merge-SHA placeholder + PR number, `state="In Review"`. These are Linear description patches, not git commits - do them before the merge so the review gate sees a complete issue.
 6. Ensemble review (section 6) including direct fixes and re-review rounds.
-7. Auto-merge (section 7) including the post-merge sync step.
+7. Auto-merge (section 7) including the post-merge sync step - or, with `merge.auto: false`, stop at `In Review` and hand the merge to the user.
 8. Close out: `state="Done"` + finalize `## Final Summary` (real merge SHA, review rounds, follow-up issues).
 
 ## 6. Ensemble review (mandatory before every merge)
@@ -78,7 +78,9 @@ Exactly one per issue: `parallel-safe` (touches no hot area) or `single-writer:<
 
 ## 7. Auto-merge
 
-After a clean review loop the agent merges autonomously: `gh pr merge <N> --squash --delete-branch`, reporting merge SHA + PR URL. Then, never skipped, in the MAIN working copy (not the task worktree - git refuses to check out a branch already checked out elsewhere, and `--delete-branch` may report "already used by worktree", which is not a merge failure):
+Governed by `merge.auto` in the config (default `true`). With `merge.auto: false` the agent never merges autonomously: it completes everything up to and including `state="In Review"` (all DoD boxes checked, `## Final Summary` with merge-SHA placeholder + PR number), then reports the PR URL + gate status and stops. The merge is the user's move - done manually or by explicitly instructing the agent; in the latter case the gates below, the post-merge sync and the `state="Done"` close-out apply unchanged.
+
+With `merge.auto: true`, after a clean review loop the agent merges autonomously: `gh pr merge <N> --squash --delete-branch`, reporting merge SHA + PR URL. Then, never skipped, in the MAIN working copy (not the task worktree - git refuses to check out a branch already checked out elsewhere, and `--delete-branch` may report "already used by worktree", which is not a merge failure):
 
 ```
 git checkout <git.baseBranch> && git pull --ff-only
@@ -97,14 +99,14 @@ Gates (all must hold, otherwise report instead of merging):
 
 ## 8. The /goal loop
 
-`/start-task` ends with a ready-to-send `/goal` condition containing measurable end states: plan implemented, gates exit 0, AC boxes checked, PR created, ensemble review + synthesis done, DoD boxes + Final Summary + In Review set before the merge, auto-merge only with green gates, post-merge base sync confirmed, and `state="Done"` as the final step. Constraints forbid `--no-verify`, hook bypasses, pushes to protected branches, force pushes, files outside the plan's touch points, plus everything in `extraConstraints`. High-risk issues add smaller commits + intermediate verification; single-writer issues add the lock constraint. Bounded at 40 turns.
+`/start-task` ends with a ready-to-send `/goal` condition containing measurable end states: plan implemented, gates exit 0, AC boxes checked, PR created, ensemble review + synthesis done, DoD boxes + Final Summary + In Review set before the merge, auto-merge only with green gates, post-merge base sync confirmed, and `state="Done"` as the final step. With `merge.auto: false` the condition ends at `state="In Review"` plus a PR-URL/gate-status report instead of the merge and `state="Done"` steps. Constraints forbid `--no-verify`, hook bypasses, pushes to protected branches, force pushes, files outside the plan's touch points, plus everything in `extraConstraints`. High-risk issues add smaller commits + intermediate verification; single-writer issues add the lock constraint. Bounded at 40 turns.
 
 ## 9. Versioning and updates
 
 - dienstweg versions are semver git tags on this repo; `package.json` carries the version. Adopting repos stamp it as `dienstwegVersion` in their config.
 - Tool-owned files (commands, hook, AGENTS block) are regenerated by `dienstweg update` - conflict-free because they are never hand-edited. `.dienstweg/manifest.json` stores content hashes; `check` and `update` detect hand-edits (update skips them unless `--force`).
 - Config schema changes ship as migrations (`migrations/index.mjs`, applied in ascending `toSchemaVersion` order during `update`).
-- Project customization happens exclusively in `dienstweg.config.json` (`extraDoD`, `extraConstraints`, `areas`, `gates`, `review`) and `dienstweg.local.md`.
+- Project customization happens exclusively in `dienstweg.config.json` (`extraDoD`, `extraConstraints`, `areas`, `gates`, `review`, `merge`) and `dienstweg.local.md`.
 
 ## 10. Adoption paths
 
