@@ -2,3 +2,5 @@
 node_modules/
 *.tgz
 .dienstweg/onboarding-prompt.md
+.claude/worktrees/
+.codex/worktrees/
