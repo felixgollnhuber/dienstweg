@@ -13,7 +13,8 @@ import {
   writeManifest,
   renderAgentsBlock,
   upsertAgentsBlock,
-  mergeSettings,
+  wireHooks,
+  orphanedHarnessArtifacts,
 } from "./generate.mjs";
 import { migrations } from "../migrations/index.mjs";
 
@@ -70,9 +71,9 @@ export function runUpdate(root, flags) {
     console.log("  NOTE: .dienstweg/manifest.json was unreadable - regenerating it from scratch.");
   }
   const mode = flags.force ? "overwrite" : "skip";
-  const { manifest, skipped } = writeGeneratedFiles(root, previousManifest, mode);
+  const { manifest, skipped } = writeGeneratedFiles(root, previousManifest, mode, config.harnesses);
   writeManifest(root, manifest);
-  const settingsAction = mergeSettings(root);
+  const hookResult = wireHooks(root, config.harnesses);
   const agentsActions = upsertAgentsBlock(root, renderAgentsBlock(config));
 
   const fromVersion = config.dienstwegVersion;
@@ -89,7 +90,7 @@ export function runUpdate(root, flags) {
   for (const target of skipped) {
     console.log(`  CONFLICT:    ${target} is hand-edited or unmanaged - left untouched. Move customizations to ${CONFIG_FILENAME} / dienstweg.local.md, then re-run with --force.`);
   }
-  console.log(`  ${settingsAction.message}`);
+  for (const a of hookResult.actions) console.log(`  ${a.message}`);
   for (const a of agentsActions) console.log(`  ${a}`);
   if (pending.length) {
     console.log(`\nNOTE: ${pending.length} config migration(s) ran - review ${CONFIG_FILENAME} and commit the changes.`);
@@ -97,8 +98,12 @@ export function runUpdate(root, flags) {
   if (skipped.length) {
     console.log(`\nNOTE: version stamp left at v${fromVersion} until the ${skipped.length} conflict(s) are resolved (re-run with --force).`);
   }
-  if (!settingsAction.wired) {
-    console.error(`\nWARN: the branch-guard hook is NOT wired - the git guardrail is inert until you fix .claude/settings.json and re-run.`);
+  const orphans = orphanedHarnessArtifacts(root, config.harnesses);
+  if (orphans.length) {
+    console.log(`\nNOTE: ${orphans.map((o) => `'${o.harness}'`).join(", ")} artifact(s) remain on disk but are no longer in config.harnesses - that harness still runs the workflow. \`dienstweg check\` lists them; remove the tree + hook wiring, or re-add the harness.`);
   }
-  return skipped.length || !settingsAction.wired ? 1 : 0;
+  if (!hookResult.wired) {
+    console.error(`\nWARN: the branch-guard hook is NOT wired - the git guardrail is inert until you fix the hook config and re-run.`);
+  }
+  return skipped.length || !hookResult.wired ? 1 : 0;
 }

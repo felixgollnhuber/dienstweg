@@ -22,4 +22,11 @@ export const migrations = [
       config.merge.auto ??= true;
     },
   },
+  {
+    toSchemaVersion: 3,
+    description: "add harnesses - install for both Claude Code and Codex (existing repos gain Codex on update)",
+    migrate(config) {
+      config.harnesses ??= ["claude", "codex"];
+    },
+  },
 ];
