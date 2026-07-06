@@ -1,37 +1,64 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_VERSION, STATE_DIR, MARKER_BEGIN } from "./config.mjs";
-import { GENERATED_FILES } from "./generate.mjs";
+import { generatedFiles } from "./generate.mjs";
 
-// Mechanical findings the CLI can detect without semantic understanding.
-// Everything that needs judgment goes into the onboarding prompt for an agent.
-export function collectFindings(root) {
+// Inspects a PreToolUse array (Claude settings.json or Codex hooks.json) for
+// foreign entries that are not the branch-guard, returning a finding string or
+// null. Shared by the Claude and Codex collision checks below.
+function foreignHooksFinding(pre, label) {
+  if (pre !== undefined && !Array.isArray(pre)) {
+    return `${label} has hooks.PreToolUse in an unexpected shape (not an array) - the branch-guard hook was NOT wired; fix the file.`;
+  }
+  const foreign = (pre || []).filter(
+    (entry) => !(entry?.hooks || []).some((h) => (h?.command || "").includes("branch-guard.mjs")),
+  );
+  if (foreign.length) {
+    return `${label} has ${foreign.length} pre-existing PreToolUse hook entr${foreign.length === 1 ? "y" : "ies"} - verify they do not conflict with the branch-guard (e.g. duplicate git-rule enforcement with different rules).`;
+  }
+  return null;
+}
+
+// Mechanical findings the CLI can detect without semantic understanding, scoped
+// to the harnesses being installed. Everything that needs judgment goes into the
+// onboarding prompt for an agent.
+export function collectFindings(root, harnesses) {
   const findings = [];
+  const active = Array.isArray(harnesses) && harnesses.length ? harnesses : ["claude"];
 
-  for (const spec of GENERATED_FILES) {
+  for (const spec of generatedFiles(active)) {
     const p = join(root, spec.target);
     if (existsSync(p)) {
       findings.push(`Pre-existing file at ${spec.target} - dienstweg did NOT overwrite it. Compare it with the dienstweg version and decide which one wins (adopt via \`dienstweg update --force\` or keep yours and remove it from dienstweg's scope).`);
     }
   }
 
-  const settingsPath = join(root, ".claude", "settings.json");
-  if (existsSync(settingsPath)) {
-    try {
-      const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-      const pre = settings?.hooks?.PreToolUse;
-      if (pre !== undefined && !Array.isArray(pre)) {
-        findings.push("settings.json has hooks.PreToolUse in an unexpected shape (not an array) - the branch-guard hook was NOT wired; fix the file.");
-      } else {
-        const foreign = (pre || []).filter(
-          (entry) => !(entry?.hooks || []).some((h) => (h?.command || "").includes("branch-guard.mjs")),
-        );
-        if (foreign.length) {
-          findings.push(`settings.json has ${foreign.length} pre-existing PreToolUse hook entr${foreign.length === 1 ? "y" : "ies"} - verify they do not conflict with the branch-guard (e.g. duplicate git-rule enforcement with different rules).`);
-        }
+  if (active.includes("claude")) {
+    const settingsPath = join(root, ".claude", "settings.json");
+    if (existsSync(settingsPath)) {
+      try {
+        const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+        const finding = foreignHooksFinding(settings?.hooks?.PreToolUse, "settings.json");
+        if (finding) findings.push(finding);
+      } catch {
+        findings.push("settings.json exists but could not be parsed as JSON - fix it manually; the branch-guard hook was NOT wired.");
       }
-    } catch {
-      findings.push("settings.json exists but could not be parsed as JSON - fix it manually; the branch-guard hook was NOT wired.");
+    }
+  }
+
+  if (active.includes("codex")) {
+    const codexHooksPath = join(root, ".codex", "hooks.json");
+    if (existsSync(codexHooksPath)) {
+      try {
+        const hooks = JSON.parse(readFileSync(codexHooksPath, "utf8"));
+        const finding = foreignHooksFinding(hooks?.hooks?.PreToolUse, ".codex/hooks.json");
+        if (finding) findings.push(finding);
+      } catch {
+        findings.push(".codex/hooks.json exists but could not be parsed as JSON - fix it manually; the branch-guard hook was NOT wired.");
+      }
+    }
+    if (existsSync(join(root, ".codex", "config.toml"))) {
+      findings.push(".codex/config.toml exists - check it for an inline [hooks] table or an approval_policy/sandbox setting that conflicts with the dienstweg branch-guard (the guard is wired via .codex/hooks.json, not config.toml).");
     }
   }
 
@@ -69,6 +96,17 @@ export function buildOnboardingPrompt(config, findings) {
   const f = findings.length
     ? findings.map((x) => `- ${x}`).join("\n")
     : "- none - the mechanical scan found no collisions.";
+  const harnesses = Array.isArray(config.harnesses) && config.harnesses.length ? config.harnesses : ["claude"];
+  const surfaceLines = [];
+  if (harnesses.includes("claude")) {
+    surfaceLines.push("- `.claude/commands/create-issue.md` + `.claude/commands/start-task.md` - Claude Code slash-commands that read the config at runtime.");
+    surfaceLines.push("- `.claude/hooks/branch-guard.mjs` (wired via .claude/settings.json) - blocks pushes/PRs that violate the git rules.");
+  }
+  if (harnesses.includes("codex")) {
+    surfaceLines.push("- `.agents/skills/create-issue/SKILL.md` + `.agents/skills/start-task/SKILL.md` - repo-committed Codex skills that read the config at runtime.");
+    surfaceLines.push("- `.codex/hooks/branch-guard.mjs` (wired via .codex/hooks.json) - blocks pushes/PRs that violate the git rules.");
+  }
+  const surface = surfaceLines.join("\n");
   return `# dienstweg onboarding audit
 
 You are onboarding this repository onto the dienstweg task workflow (v${CLI_VERSION}). The CLI already did the mechanical setup. Your job is the semantic part: find and resolve contradictions between the project's existing rules and the dienstweg workflow, then verify the setup.
@@ -77,10 +115,9 @@ Respond to the user in "${config.language}".
 
 ## What dienstweg installed
 
-- \`dienstweg.config.json\` - the single source of project values: Linear team "${config.tracker.linearTeam}", issue prefix ${config.tracker.issuePrefix}, base branch \`${config.git.baseBranch}\`, gates \`${config.gates.build}\`.
-- \`.claude/commands/create-issue.md\` + \`.claude/commands/start-task.md\` - generic commands that read the config at runtime.
-- \`.claude/hooks/branch-guard.mjs\` (wired via settings.json) - blocks pushes/PRs that violate the git rules.
-- A "Task workflow (dienstweg)" block in AGENTS.md between \`<!-- dienstweg:begin -->\` and \`<!-- dienstweg:end -->\` markers.
+- \`dienstweg.config.json\` - the single source of project values: Linear team "${config.tracker.linearTeam}", issue prefix ${config.tracker.issuePrefix}, base branch \`${config.git.baseBranch}\`, gates \`${config.gates.build}\`, harnesses ${harnesses.join(" + ")}.
+${surface}
+- A "Task workflow (dienstweg)" block in AGENTS.md between \`<!-- dienstweg:begin -->\` and \`<!-- dienstweg:end -->\` markers (read natively by both Claude Code and Codex).
 - \`dienstweg.local.md\` - the place for project-specific additions (owned by the project, never overwritten).
 
 ## Mechanical findings from the CLI
@@ -89,7 +126,7 @@ ${f}
 
 ## Your tasks
 
-1. Read \`dienstweg.config.json\`, AGENTS.md (the dienstweg block AND everything else), CLAUDE.md, dienstweg.local.md, CONTRIBUTING.md, .github/ (workflows, PR templates), any pre-existing .claude/commands and hooks.
+1. Read \`dienstweg.config.json\`, AGENTS.md (the dienstweg block AND everything else), CLAUDE.md, dienstweg.local.md, CONTRIBUTING.md, .github/ (workflows, PR templates), any pre-existing command/skill/hook files under .claude/, .codex/, and .agents/skills/.
 2. Build a conflict report: every place where an existing rule contradicts the dienstweg workflow (examples: different PR base branch, different commit format, a competing review process, another issue tracker, hooks enforcing different rules). For each finding propose exactly one resolution:
    - dienstweg wins: remove/adjust the old rule.
    - project wins: encode the project rule in dienstweg.config.json (extraDoD, extraConstraints, areas, gates) or dienstweg.local.md.

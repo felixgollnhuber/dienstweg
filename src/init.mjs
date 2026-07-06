@@ -16,7 +16,7 @@ import {
   renderAgentsBlock,
   upsertAgentsBlock,
   ensureLocalRules,
-  mergeSettings,
+  wireHooks,
 } from "./generate.mjs";
 import {
   collectFindings,
@@ -34,6 +34,16 @@ function ignoreOnboardingPrompt(root) {
   writeFileSync(p, current + (current && !current.endsWith("\n") ? "\n" : "") + entry + "\n");
 }
 
+// The tool-owned directories to commit, per active harness (Claude: .claude;
+// Codex: .codex hooks + .agents skills). Shown in the closing "commit these
+// files" hint.
+function harnessCommitPaths(harnesses) {
+  const dirs = [];
+  if (harnesses.includes("claude")) dirs.push(".claude/");
+  if (harnesses.includes("codex")) dirs.push(".codex/", ".agents/");
+  return dirs.join(", ");
+}
+
 export async function runInit(root, flags) {
   if (loadConfig(root)) {
     throw new Error(
@@ -47,8 +57,9 @@ export async function runInit(root, flags) {
   const answers = await runInterview(root, flags);
 
   // Collect collision findings BEFORE writing, so pre-existing files are
-  // reported even though init (mode "skip") never overwrites them.
-  const findings = collectFindings(root);
+  // reported even though init (mode "skip") never overwrites them. Scan only the
+  // harnesses being installed.
+  const findings = collectFindings(root, answers.harnesses);
 
   const config = defaultConfig(answers);
   const problems = validateConfig(config);
@@ -57,9 +68,9 @@ export async function runInit(root, flags) {
   }
   writeConfig(root, config);
 
-  const { manifest, skipped } = writeGeneratedFiles(root, null, "skip");
+  const { manifest, skipped } = writeGeneratedFiles(root, null, "skip", config.harnesses);
   writeManifest(root, manifest);
-  const settingsAction = mergeSettings(root);
+  const hookResult = wireHooks(root, config.harnesses);
   const agentsActions = upsertAgentsBlock(root, renderAgentsBlock(config));
   const localCreated = ensureLocalRules(root);
 
@@ -69,10 +80,10 @@ export async function runInit(root, flags) {
   const needsAudit = answers.existing || skipped.length > 0;
 
   console.log(`dienstweg v${CLI_VERSION} initialized for "${config.project}"`);
-  console.log(`  config:   dienstweg.config.json (team ${config.tracker.linearTeam}, prefix ${config.tracker.issuePrefix}, base ${config.git.baseBranch}${config.merge.auto ? "" : ", auto-merge off"})`);
+  console.log(`  config:   dienstweg.config.json (team ${config.tracker.linearTeam}, prefix ${config.tracker.issuePrefix}, base ${config.git.baseBranch}, harnesses ${config.harnesses.join(" + ")}${config.merge.auto ? "" : ", auto-merge off"})`);
   for (const target of Object.keys(manifest.files)) console.log(`  written:  ${target}`);
   for (const target of skipped) console.log(`  SKIPPED:  ${target} (pre-existing, not overwritten)`);
-  console.log(`  ${settingsAction.message}`);
+  for (const a of hookResult.actions) console.log(`  ${a.message}`);
   for (const a of agentsActions) console.log(`  ${a}`);
   if (localCreated) console.log("  written:  dienstweg.local.md (project-owned stub)");
 
@@ -88,14 +99,18 @@ export async function runInit(root, flags) {
     console.log(prompt);
     console.log("----------------------------------------------------------------");
   } else {
+    const firstIssueHint = config.harnesses.includes("claude")
+      ? "Create your first issue with /create-issue in Claude Code (or the create-issue skill in Codex)."
+      : "Create your first issue with the create-issue skill in Codex.";
     console.log("\nFresh repo - no semantic audit needed. Next steps:");
     console.log(`  1. Create the Linear team "${config.tracker.linearTeam}" (key ${config.tracker.issuePrefix}) with labels parallel-safe + single-writer:<area>.`);
     console.log("  2. Run `dienstweg check` to verify the setup.");
-    console.log("  3. Create your first issue with /create-issue in Claude Code.");
+    console.log(`  3. ${firstIssueHint}`);
   }
-  if (!settingsAction.wired) {
-    console.error(`\nWARN: the branch-guard hook is NOT wired - fix .claude/settings.json and run \`dienstweg update\`.`);
+  if (!hookResult.wired) {
+    console.error(`\nWARN: the branch-guard hook is NOT wired - fix the hook config and run \`dienstweg update\`.`);
   }
-  console.log("\nCommit these files: dienstweg.config.json, dienstweg.local.md, .claude/, .dienstweg/manifest.json.");
-  return (needsAudit && skipped.length) || !settingsAction.wired ? 1 : 0;
+  const commitDirs = harnessCommitPaths(config.harnesses);
+  console.log(`\nCommit these files: dienstweg.config.json, dienstweg.local.md, ${commitDirs}, .dienstweg/manifest.json.`);
+  return (needsAudit && skipped.length) || !hookResult.wired ? 1 : 0;
 }

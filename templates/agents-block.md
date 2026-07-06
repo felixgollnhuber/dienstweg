@@ -2,10 +2,12 @@
 
 This project follows the dienstweg task workflow. Project values live in `dienstweg.config.json`, project-specific additions in `dienstweg.local.md` (read both before task work). Respond to the user in "{{language}}". Tasks are tracked in Linear (team `{{linearTeam}}`, prefix `{{issuePrefix}}-XXX`); all issue operations go through the Linear MCP tools, never via REST or local files.
 
-**Commands:**
+**Harnesses:** {{harnesses}}. The two commands below and the branch-guard git hook are installed for each active harness; the guard is active in whichever harness runs.
 
-- `/create-issue <topic>` - create a new issue following the schema (interference check + PlanMode drafting). Creates ONLY the backlog issue.
-- `/start-task {{issuePrefix}}-XXX` - worktree + plan in the issue description + ready-to-run `/goal` condition. Implementation happens only in the `/goal` loop.
+**Commands** (Claude Code: the `/create-issue` and `/start-task` slash-commands; Codex: the `create-issue` and `start-task` skills - invoke via `/skills`, `$name`, or by describing the intent):
+
+- **create-issue** `<topic>` - create a new issue following the schema (interference check + collaborative plan drafting). Creates ONLY the backlog issue.
+- **start-task** `{{issuePrefix}}-XXX` - worktree + plan in the issue description + ready-to-run `/goal` condition. Implementation happens only in the `/goal` loop.
 
 **Git conventions:**
 
@@ -24,7 +26,7 @@ This project follows the dienstweg task workflow. Project values live in `dienst
 
 **Parallelism:** exactly one label per issue: `parallel-safe` or `single-writer:<area>` (areas: {{singleWriter}}). Before starting, check whether another issue holds the same lock.
 
-**Review (mandatory before every merge):** {{ensembleSize}}x ensemble review - {{ensembleSize}} parallel review subagents (subagent_type={{subagentType}} if defined, otherwise general-purpose) in ONE message, identical broad scope, no splitting. Fix consensus findings directly, judge singletons critically, decide conflicts explicitly. Re-review on larger fix changes (new logic / high-risk / >50 LOC / >3 new files / interface change), max {{maxRounds}} rounds. A single review call does not replace the ensemble.
+**Review (mandatory before every merge):** {{ensembleSize}}x ensemble review - {{ensembleSize}} independent reviewers with an identical, broad scope, run in parallel, no splitting. The fan-out mechanism is harness-specific (Claude Code: parallel review subagents in one message; Codex: parallel `codex exec` reviewers) - see the start-task command. Fix consensus findings directly, judge singletons critically, decide conflicts explicitly. Re-review on larger fix changes (new logic / high-risk / >50 LOC / >3 new files / interface change), max {{maxRounds}} rounds. A single review pass does not replace the ensemble.
 
 {{mergePolicy}}
 
