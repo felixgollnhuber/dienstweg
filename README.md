@@ -146,6 +146,20 @@ And inside the agent — Claude Code slash-commands, or the equivalent Codex ski
 | `create-issue <topic>` | Draft a schema-conformant issue after an interference check. Creates the backlog issue only. |
 | `start-task <PREFIX>-N` | Claim the issue, set up a worktree, plan it, and hand you a ready-to-run `/goal` condition. |
 
+### Invoking them in each harness
+
+The two commands live in each harness's native, repo-committed form — and they're invoked differently, because Codex has no user-defined `/`-commands:
+
+- **Claude Code** — real slash-commands under `.claude/commands/`. Type `/create-issue <topic>` or `/start-task DW-1`.
+- **Codex** — repo-committed **skills** under `.agents/skills/`, invoked three ways:
+  - `/skills` → pick `create-issue` or `start-task` from the menu;
+  - `$create-issue add rate limiting` — type `$` to mention a skill, then your topic;
+  - or just describe the intent — `create a dienstweg issue for rate limiting`, `start task DW-1` — and Codex activates the skill by its `description`.
+
+  Typing `/create-issue` in Codex does **not** work: Codex's only user-extensible, repo-shared prompt mechanism is skills (custom `/`-prompts are global-only and deprecated). Skills also have no `$ARGUMENTS` placeholder — whatever you write alongside the invocation is the input, and the skill reads it from your message.
+
+`/goal` is a built-in in **both** harnesses, so the `/goal` handoff that ends `start-task` is identical either way.
+
 ## What's in the box
 
 - **Ensemble review** — three independent reviewers, identical broad scope, run before every merge. Consensus findings are high-signal and fixed directly; singletons are judged; conflicts are decided, not averaged. Re-review triggers on larger fix changes, capped at three rounds.
