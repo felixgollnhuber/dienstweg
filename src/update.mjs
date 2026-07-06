@@ -14,6 +14,7 @@ import {
   renderAgentsBlock,
   upsertAgentsBlock,
   wireHooks,
+  orphanedHarnessArtifacts,
 } from "./generate.mjs";
 import { migrations } from "../migrations/index.mjs";
 
@@ -96,6 +97,10 @@ export function runUpdate(root, flags) {
   }
   if (skipped.length) {
     console.log(`\nNOTE: version stamp left at v${fromVersion} until the ${skipped.length} conflict(s) are resolved (re-run with --force).`);
+  }
+  const orphans = orphanedHarnessArtifacts(root, config.harnesses);
+  if (orphans.length) {
+    console.log(`\nNOTE: ${orphans.map((o) => `'${o.harness}'`).join(", ")} artifact(s) remain on disk but are no longer in config.harnesses - that harness still runs the workflow. \`dienstweg check\` lists them; remove the tree + hook wiring, or re-add the harness.`);
   }
   if (!hookResult.wired) {
     console.error(`\nWARN: the branch-guard hook is NOT wired - the git guardrail is inert until you fix the hook config and re-run.`);

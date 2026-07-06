@@ -14,6 +14,7 @@ import {
 import {
   sha256,
   generatedFiles,
+  orphanedHarnessArtifacts,
   renderAgentsBlock,
   agentsMarkerState,
 } from "./generate.mjs";
@@ -108,6 +109,15 @@ export function runCheck(root) {
     } else if (!codexWired) {
       problems.push("branch-guard hook is not wired for Codex in .codex/hooks.json.");
     }
+  }
+
+  // A harness dropped from config.harnesses but still present on disk keeps
+  // running the workflow - surface it rather than silently reporting OK.
+  for (const orphan of orphanedHarnessArtifacts(root, activeHarnesses)) {
+    const bits = [];
+    if (orphan.files.length) bits.push(`files (${orphan.files.join(", ")})`);
+    if (orphan.wired) bits.push("a wired branch-guard hook");
+    problems.push(`harness '${orphan.harness}' is not in config.harnesses but still has ${bits.join(" and ")} on disk - that harness will keep running the workflow. Remove its tree + hook wiring, or add '${orphan.harness}' back to config.harnesses and run \`dienstweg update\`.`);
   }
 
   const agentsPath = join(root, "AGENTS.md");

@@ -12,6 +12,7 @@ import {
   hookWiredIn,
   codexHookWiredIn,
   wireHooks,
+  orphanedHarnessArtifacts,
 } from "../src/generate.mjs";
 import { tmpRepo, cleanupAll } from "./helpers.mjs";
 
@@ -121,11 +122,31 @@ test("mergeCodexHooks wires .codex/hooks.json, is idempotent, and survives malfo
   const pre = JSON.parse(readFileSync(join(root, ".codex", "hooks.json"), "utf8")).hooks.PreToolUse;
   assert.equal(pre.length, 1);
   assert.equal(pre[0].matcher, "Bash");
+  // Command resolves the script from the git root (Codex runs hooks with the
+  // session cwd, which may be a subdir), not a bare relative path.
+  assert.match(pre[0].hooks[0].command, /git rev-parse --show-toplevel.*\.codex\/hooks\/branch-guard\.mjs/);
 
   const bad = tmpRepo();
   mkdirSync(join(bad, ".codex"), { recursive: true });
   writeFileSync(join(bad, ".codex", "hooks.json"), "nope");
   assert.equal(mergeCodexHooks(bad).wired, false);
+});
+
+test("orphanedHarnessArtifacts flags a dropped harness still on disk", () => {
+  const root = tmpRepo();
+  wireHooks(root, ["claude", "codex"]); // both hooks wired
+  mkdirSync(join(root, ".agents", "skills", "create-issue"), { recursive: true });
+  writeFileSync(join(root, ".agents", "skills", "create-issue", "SKILL.md"), "x");
+
+  // narrowed to claude -> codex is now an orphan (wired hook + a file)
+  const orphans = orphanedHarnessArtifacts(root, ["claude"]);
+  assert.equal(orphans.length, 1);
+  assert.equal(orphans[0].harness, "codex");
+  assert.equal(orphans[0].wired, true);
+  assert.ok(orphans[0].files.includes(".agents/skills/create-issue/SKILL.md"));
+
+  // nothing orphaned when both are active
+  assert.deepEqual(orphanedHarnessArtifacts(root, ["claude", "codex"]), []);
 });
 
 test("wireHooks wires exactly the active harnesses", () => {
