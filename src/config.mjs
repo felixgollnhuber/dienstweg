@@ -119,7 +119,7 @@ export function validateConfig(config) {
   }
   const prefix = config?.tracker?.issuePrefix;
   if (prefix && !ISSUE_PREFIX_RE.test(prefix)) {
-    problems.push(`tracker.issuePrefix "${prefix}" is invalid - must match ${ISSUE_PREFIX_RE} (a Linear team key, e.g. FAC).`);
+    problems.push(`tracker.issuePrefix "${prefix}" is invalid - must match ${ISSUE_PREFIX_RE} (a Linear team key, e.g. ABC).`);
   }
   const harnesses = config?.harnesses;
   if (harnesses !== undefined && harnesses !== null) {
@@ -138,7 +138,7 @@ export function validateConfig(config) {
   }
   if (typeof config?.schemaVersion === "number" && config.schemaVersion > CURRENT_SCHEMA_VERSION) {
     problems.push(
-      `config schemaVersion ${config.schemaVersion} is newer than this CLI supports (${CURRENT_SCHEMA_VERSION}). Update the dienstweg repo (git pull).`,
+      `config schemaVersion ${config.schemaVersion} is newer than this CLI supports (${CURRENT_SCHEMA_VERSION}). Upgrade the dienstweg CLI (npm i -g dienstweg@latest).`,
     );
   }
   return problems;

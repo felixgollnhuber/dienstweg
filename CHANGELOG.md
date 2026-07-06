@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.1 (2026-07-06)
+
+First public release. No functional changes to the workflow or the guard.
+
+- Published under the MIT license; the package is on npm, so the quickstart is now `npx dienstweg init`.
+- Added CI (tests on Node 20/22, tag-triggered npm publish with provenance), SECURITY.md (threat model + update trust model), CONTRIBUTING.md, CODE_OF_CONDUCT.md, and issue templates.
+- README rewritten for a public audience; version-skew error messages no longer assume a git-clone install (`npm i -g dienstweg@latest` instead of `git pull`).
+- Neutral example team key in docs and error messages (`ABC` instead of `FAC`); documented that `review.subagentType`'s default `ensemble-reviewer` refers to an agent the adopting repo must define itself.
+
 ## v0.3.0 (2026-07-06)
 
 Dual-harness support: dienstweg now sets up Claude Code **and** Codex, automatically.
@@ -20,16 +29,16 @@ Auto-merge becomes a config switch.
 
 ## v0.1.3 (2026-07-02)
 
-Re-review round 3 (final; 0 critical). Fixed the two remaining broken-recovery-path bugs; the rest were nitpicks and are parked.
+Third and final ensemble-review round (0 critical findings). Fixes the two remaining broken-recovery-path bugs; the remaining minor findings are listed below as known limitations.
 
 - `update` no longer dead-ends on a corrupt `.dienstweg/manifest.json`. The manifest is disposable, regenerable state, so a parse failure is now treated as absent (regenerate from scratch) instead of throwing - which had contradicted `check`'s own "run `dienstweg update` to regenerate" advice.
 - `update` (and `init`) now exit non-zero and print a WARN when a malformed `.claude/settings.json` prevented the branch-guard from being wired, instead of reporting a clean success with the "NOT wired" line buried in normal output (a CI wrapper would otherwise treat an inert guard as success). `mergeSettings` returns `{ wired, message }`.
 
-Parked (guardrail-scope nitpicks, tracked for a future pass): equals-bundled push flags with a sole branch token (`git push --repo=origin main`); a `:dst` delete refspec reported with the generic "Direct push" message; partial-write ordering when AGENTS.md markers are corrupt (recoverable); cosmetic empty-config rendering of the Extra DoD line.
+Known limitations (guardrail scope, tracked for a future pass): equals-bundled push flags with a sole branch token (`git push --repo=origin main`); a `:dst` delete refspec reported with the generic "Direct push" message; partial-write ordering when AGENTS.md markers are corrupt (recoverable); cosmetic empty-config rendering of the Extra DoD line.
 
 ## v0.1.2 (2026-07-02)
 
-Second hardening pass after re-review round 2 (0 critical; consensus + real completeness findings).
+Second hardening pass after another ensemble-review round (0 critical findings).
 
 - `update` no longer dead-ends on a config that merely lost its `schemaVersion` stamp: a missing/zero stamp is treated as the initial schema and repaired, instead of throwing "this is a dienstweg bug". The genuine-missing-migration error is reserved for a real gap between migration versions.
 - `mergeSettings` treats the branch-guard as already wired when it lives in `settings.local.json`, so `init`/`update` no longer append a duplicate entry to `settings.json` (which made the hook run twice).

@@ -6,11 +6,12 @@
 
 A config-driven task workflow for agent-assisted development. One Linear issue as the source of truth, an ensemble review before every merge, and a git guardrail that stops the mistakes before they land — installed into any repo with one command, updatable across all of them with one more. Works the same in **Claude Code and Codex**: both harnesses are set up automatically, each with its own native command surface and the same git guardrail.
 
-![version](https://img.shields.io/badge/version-0.3.0-2563eb?style=flat-square)
+![npm](https://img.shields.io/npm/v/dienstweg?style=flat-square&color=2563eb)
+![tests](https://img.shields.io/github/actions/workflow/status/felixgollnhuber/dienstweg/test.yml?style=flat-square&label=tests)
 ![node](https://img.shields.io/badge/node-%E2%89%A520-3fb950?style=flat-square)
 ![dependencies](https://img.shields.io/badge/dependencies-0-3fb950?style=flat-square)
 ![harness](https://img.shields.io/badge/Claude_Code_%2B_Codex_%2B_Linear_%2B_GitHub-1f2328?style=flat-square)
-![status](https://img.shields.io/badge/status-internal-6e7781?style=flat-square)
+![license](https://img.shields.io/badge/license-MIT-3fb950?style=flat-square)
 
 </div>
 
@@ -37,18 +38,18 @@ The clever part is what makes it reusable: **the commands and the hook are gener
 ## Quickstart
 
 ```bash
-# once: put `dienstweg` on your PATH (zero dependencies to install)
-git clone <this repo> && cd dienstweg && npm link
-
-# in any repo you want to adopt the workflow:
+# in any repo you want to adopt the workflow (zero dependencies):
 cd ~/my-project
-dienstweg init
+npx dienstweg init
+
+# or install once, globally:
+npm i -g dienstweg
 ```
 
 `init` runs a short interview — existing project or fresh repo, project name, language (English by default), which harnesses (both by default), Linear team & issue prefix, base branch, build gates, auto-merge on/off, high-risk and single-writer areas — and writes everything it needs:
 
 ```
-dienstweg v0.3.0 initialized for "my-project"
+dienstweg v0.3.1 initialized for "my-project"
   config:   dienstweg.config.json (team MyProject, prefix MYP, base main, harnesses claude + codex)
   written:  .claude/commands/create-issue.md
   written:  .claude/commands/start-task.md
@@ -162,7 +163,7 @@ The two commands live in each harness's native, repo-committed form — and they
 
 ## What's in the box
 
-- **Ensemble review** — three independent reviewers, identical broad scope, run before every merge. Consensus findings are high-signal and fixed directly; singletons are judged; conflicts are decided, not averaged. Re-review triggers on larger fix changes, capped at three rounds.
+- **Ensemble review** — three independent reviewers, identical broad scope, run before every merge. Consensus findings are high-signal and fixed directly; singletons are judged; conflicts are decided, not averaged. Re-review triggers on larger fix changes, capped at three rounds. In Claude Code, reviewers run as the subagent type named in `review.subagentType` (default `ensemble-reviewer`) — that agent is **yours to define** (e.g. `.claude/agents/ensemble-reviewer.md`); if your repo doesn't define one, reviewers fall back to `general-purpose`.
 - **Hard auto-merge gates** — base branch, green build, all DoD boxes checked, no open critical findings, review loop finished, no user override. Any gate red → it reports instead of merging. Auto-merge itself is a config switch (`merge.auto`, default on): off means the agent stops at *In Review* and hands the merge to you.
 - **Single-source issues** — plan, acceptance criteria, definition of done, and final summary all live in the Linear issue. No local backlog files, no task state stranded in a chat.
 - **Parallelism labels** — `parallel-safe` vs. `single-writer:<area>` to keep concurrent agents off each other's hot files.
@@ -171,10 +172,12 @@ The two commands live in each harness's native, repo-committed form — and they
 
 Node ≥ 20 · git · at least one of [Claude Code](https://claude.com/claude-code) v2.1.139+ or [Codex CLI](https://developers.openai.com/codex) (both provide `/goal`) · a Linear MCP server · the `gh` CLI.
 
+Developed and tested on macOS/Linux; Windows is untested — reports welcome.
+
 The full workflow — issue schema, git conventions, review protocol, auto-merge gates, the `/goal` condition — is documented in [WORKFLOW.md](WORKFLOW.md).
 
 ---
 
 <div align="center">
-<sub>Internal tool · package is private / unpublished · no <code>npx dienstweg</code> from the registry (yet)</sub>
+<sub><a href="LICENSE">MIT</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="SECURITY.md">Security & threat model</a></sub>
 </div>

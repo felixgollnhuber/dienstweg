@@ -25,12 +25,12 @@ export function runUpdate(root, flags) {
   }
   if (compareSemver(config.dienstwegVersion, CLI_VERSION) > 0) {
     throw new Error(
-      `project is on v${config.dienstwegVersion} but this CLI is v${CLI_VERSION} - update the dienstweg repo (git pull) first.`,
+      `project is on v${config.dienstwegVersion} but this CLI is v${CLI_VERSION} - upgrade the dienstweg CLI first (npm i -g dienstweg@latest).`,
     );
   }
   if ((config.schemaVersion ?? 0) > CURRENT_SCHEMA_VERSION) {
     throw new Error(
-      `config schemaVersion ${config.schemaVersion} is newer than this CLI supports (${CURRENT_SCHEMA_VERSION}) - update the dienstweg repo (git pull) first.`,
+      `config schemaVersion ${config.schemaVersion} is newer than this CLI supports (${CURRENT_SCHEMA_VERSION}) - upgrade the dienstweg CLI first (npm i -g dienstweg@latest).`,
     );
   }
 

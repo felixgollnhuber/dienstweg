@@ -33,7 +33,7 @@ init flags (each skips the corresponding question):
 update flags:
   --force               Overwrite hand-edited generated files.
 
-Run from the target repo's root. Docs: WORKFLOW.md in the dienstweg repo.`;
+Run from the target repo's root. Docs: https://github.com/felixgollnhuber/dienstweg (WORKFLOW.md).`;
 
 const VALUE_FLAGS = {
   "--name": "name",

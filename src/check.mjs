@@ -59,7 +59,7 @@ export function runCheck(root) {
     if (cmp < 0) {
       infos.push(`update available: project is on v${config.dienstwegVersion}, CLI is v${CLI_VERSION} - run \`dienstweg update\`.`);
     } else if (cmp > 0) {
-      problems.push(`project was set up with v${config.dienstwegVersion} but this CLI is older (v${CLI_VERSION}) - update the dienstweg repo (git pull).`);
+      problems.push(`project was set up with v${config.dienstwegVersion} but this CLI is older (v${CLI_VERSION}) - upgrade the dienstweg CLI (npm i -g dienstweg@latest).`);
     }
   }
 

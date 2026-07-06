@@ -68,7 +68,7 @@ Exactly one per issue: `parallel-safe` (touches no hot area) or `single-writer:<
 
 ## 6. Ensemble review (mandatory before every merge)
 
-- Launch `review.ensembleSize` (default 3) reviewers in parallel: in Claude Code as review subagents **in one message** (use `review.subagentType` if the repo defines it, otherwise `general-purpose`); in Codex as `review.ensembleSize` independent `codex exec` processes started in one batch (prefer `codex exec --json`, run them read-only, apply fixes yourself afterwards).
+- Launch `review.ensembleSize` (default 3) reviewers in parallel: in Claude Code as review subagents **in one message** (use `review.subagentType` if the repo actually defines an agent of that name, e.g. `.claude/agents/ensemble-reviewer.md` — the config field alone doesn't create one; otherwise `general-purpose`); in Codex as `review.ensembleSize` independent `codex exec` processes started in one batch (prefer `codex exec --json`, run them read-only, apply fixes yourself afterwards).
 - **No scope splitting** - every reviewer covers the full PR broadly (code quality, bugs, logic, conventions, tests, edge cases, error handling, security, high-risk areas, performance). Deliberately redundant.
 - Each subagent gets PR number + branch + worktree path + an identical prompt; output: structured report (Critical / Important / Suggestions / Strengths) with `file:line` references.
 - **Synthesis by the main agent**: consensus findings (>=2 reviewers) are fixed directly; singletons are judged critically (real issues get fixed too); conflicts are decided explicitly, never silently averaged.

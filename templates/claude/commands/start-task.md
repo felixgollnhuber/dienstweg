@@ -14,7 +14,7 @@ You are preparing the Linear issue `$ARGUMENTS` for implementation. Goal: worktr
 
 ## Step 1 - Load the issue
 
-- Normalize `$ARGUMENTS` to the format `<issuePrefix>-XXX` (e.g. `123` -> `FAC-123` when the prefix is FAC).
+- Normalize `$ARGUMENTS` to the format `<issuePrefix>-XXX` (e.g. `123` -> `ABC-123` when the prefix is ABC).
 - Call `get_issue` with that identifier. Read: title, description (including the sections `## Plan`, `## Acceptance Criteria`, `## Definition of Done`, `## Setup`, `## Final Summary`), labels, project, milestone, relations, state.
 - If the issue does not exist or is already `Done`: STOP, ask the user.
 - Check the parallelism labels (`parallel-safe`, `single-writer:<area>`) and log them briefly.
