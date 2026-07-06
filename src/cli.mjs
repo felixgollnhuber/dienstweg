@@ -19,6 +19,7 @@ init flags (each skips the corresponding question):
   --new | --existing    Fresh repo vs. existing project (default: auto-detected).
   --name <name>         Project name.
   --language <lang>     Conversation language (default: en).
+  --harness <which>     Agent harness(es): both | claude | codex (default: both).
   --prefix <KEY>        Linear issue prefix / team key.
   --team <name>         Linear team name.
   --project <name>      Default Linear project (default: none).
@@ -37,6 +38,7 @@ Run from the target repo's root. Docs: WORKFLOW.md in the dienstweg repo.`;
 const VALUE_FLAGS = {
   "--name": "name",
   "--language": "language",
+  "--harness": "harness",
   "--prefix": "prefix",
   "--team": "team",
   "--project": "project",

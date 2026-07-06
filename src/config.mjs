@@ -5,9 +5,14 @@ import { fileURLToPath } from "node:url";
 export const CONFIG_FILENAME = "dienstweg.config.json";
 export const STATE_DIR = ".dienstweg";
 export const MANIFEST_FILENAME = "manifest.json";
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 export const MARKER_BEGIN = "<!-- dienstweg:begin -->";
 export const MARKER_END = "<!-- dienstweg:end -->";
+
+// The agent harnesses dienstweg installs its command surface + git guardrail
+// into. Each maps to its own tool-owned files (see generatedFiles in
+// generate.mjs); the branch-guard script itself is harness-neutral.
+export const KNOWN_HARNESSES = ["claude", "codex"];
 
 const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
 export const CLI_VERSION = JSON.parse(readFileSync(pkgPath, "utf8")).version;
@@ -52,6 +57,7 @@ export function defaultConfig(answers) {
     dienstwegVersion: CLI_VERSION,
     project: answers.project,
     language: answers.language,
+    harnesses: answers.harnesses,
     tracker: {
       linearTeam: answers.linearTeam,
       issuePrefix: answers.issuePrefix,
@@ -86,6 +92,7 @@ const REQUIRED_PATHS = [
   ["dienstwegVersion"],
   ["project"],
   ["language"],
+  ["harnesses"],
   ["tracker", "linearTeam"],
   ["tracker", "issuePrefix"],
   ["git", "baseBranch"],
@@ -113,6 +120,17 @@ export function validateConfig(config) {
   const prefix = config?.tracker?.issuePrefix;
   if (prefix && !ISSUE_PREFIX_RE.test(prefix)) {
     problems.push(`tracker.issuePrefix "${prefix}" is invalid - must match ${ISSUE_PREFIX_RE} (a Linear team key, e.g. FAC).`);
+  }
+  const harnesses = config?.harnesses;
+  if (harnesses !== undefined && harnesses !== null) {
+    if (!Array.isArray(harnesses) || harnesses.length === 0) {
+      problems.push(`harnesses must be a non-empty array (a subset of ${JSON.stringify(KNOWN_HARNESSES)}), got ${JSON.stringify(harnesses)}.`);
+    } else {
+      const unknown = harnesses.filter((h) => !KNOWN_HARNESSES.includes(h));
+      if (unknown.length) {
+        problems.push(`harnesses has unknown value(s) ${JSON.stringify(unknown)} - allowed: ${KNOWN_HARNESSES.join(", ")}.`);
+      }
+    }
   }
   const autoMerge = config?.merge?.auto;
   if (autoMerge !== undefined && autoMerge !== null && typeof autoMerge !== "boolean") {

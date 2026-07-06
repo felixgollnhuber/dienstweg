@@ -13,7 +13,7 @@ import {
 } from "./config.mjs";
 import {
   sha256,
-  GENERATED_FILES,
+  generatedFiles,
   renderAgentsBlock,
   agentsMarkerState,
 } from "./generate.mjs";
@@ -38,6 +38,14 @@ export function runCheck(root) {
   }
 
   problems.push(...validateConfig(config).map((p) => `config: ${p}`));
+
+  // Which harnesses to verify files + hook wiring for. A pre-v3 config has no
+  // harnesses field yet (validateConfig already flags that); fall back to
+  // claude-only so the doctor keeps its existing diagnostics and never demands
+  // Codex wiring before the migration has run.
+  const activeHarnesses = Array.isArray(config.harnesses) && config.harnesses.length
+    ? config.harnesses
+    : ["claude"];
 
   // An outdated schema usually explains the missing-field FAILs above; point
   // at the migration instead of leaving the user to add fields by hand.
@@ -73,22 +81,33 @@ export function runCheck(root) {
         problems.push(`generated file was hand-edited: ${target} - generated files are tool-owned; move customizations to ${CONFIG_FILENAME} or dienstweg.local.md, then run \`dienstweg update --force\`.`);
       }
     }
-    for (const spec of GENERATED_FILES) {
+    for (const spec of generatedFiles(activeHarnesses)) {
       if (!files[spec.target]) {
         problems.push(`unmanaged: ${spec.target} is not tracked by dienstweg (a pre-existing file was skipped during init/update) - adopt the dienstweg version via \`dienstweg update --force\` or move the custom content to dienstweg.local.md.`);
       }
     }
   }
 
-  const hookWired = hookIsWired(root);
-  if (hookWired === "invalid") {
-    problems.push("branch-guard hook is not wired: a .claude settings file is not valid JSON.");
-  } else if (!hookWired) {
-    problems.push("branch-guard hook is not wired in .claude/settings.json or .claude/settings.local.json.");
-  } else if (hasInvalidSettingsFile(root)) {
-    // Wired via a valid file, but another settings file is broken - not fatal,
-    // but worth surfacing so a corrupt committed settings.json is not masked.
-    infos.push("a .claude settings file is not valid JSON (the hook is wired via another file) - fix it to avoid surprises.");
+  if (activeHarnesses.includes("claude")) {
+    const hookWired = hookIsWired(root);
+    if (hookWired === "invalid") {
+      problems.push("branch-guard hook is not wired: a .claude settings file is not valid JSON.");
+    } else if (!hookWired) {
+      problems.push("branch-guard hook is not wired in .claude/settings.json or .claude/settings.local.json.");
+    } else if (hasInvalidSettingsFile(root)) {
+      // Wired via a valid file, but another settings file is broken - not fatal,
+      // but worth surfacing so a corrupt committed settings.json is not masked.
+      infos.push("a .claude settings file is not valid JSON (the hook is wired via another file) - fix it to avoid surprises.");
+    }
+  }
+
+  if (activeHarnesses.includes("codex")) {
+    const codexWired = codexHookIsWired(root);
+    if (codexWired === "invalid") {
+      problems.push("branch-guard hook is not wired for Codex: .codex/hooks.json is not valid JSON.");
+    } else if (!codexWired) {
+      problems.push("branch-guard hook is not wired for Codex in .codex/hooks.json.");
+    }
   }
 
   const agentsPath = join(root, "AGENTS.md");
@@ -145,6 +164,24 @@ function hookIsWired(root) {
   }
   if (wired) return true;
   return sawInvalid ? "invalid" : false;
+}
+
+// Codex counterpart of hookIsWired: true (wired), false (not wired), or
+// "invalid" (.codex/hooks.json is not valid JSON).
+function codexHookIsWired(root) {
+  const p = join(root, ".codex", "hooks.json");
+  if (!existsSync(p)) return false;
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return "invalid";
+  }
+  const pre = parsed?.hooks?.PreToolUse;
+  if (Array.isArray(pre) && pre.some((entry) => (entry?.hooks || []).some((h) => (h?.command || "").includes("branch-guard.mjs")))) {
+    return true;
+  }
+  return false;
 }
 
 function hasInvalidSettingsFile(root) {

@@ -3,6 +3,10 @@
 // violations. Reads the PreToolUse payload from stdin, emits feedback to stderr
 // and exits with code 2 to BLOCK. Exit 0 = allow.
 //
+// Harness-neutral: Claude Code and Codex both send a PreToolUse payload with the
+// shell command in `tool_input.command`, and both treat `exit 2` + stderr as a
+// deny. The same rendered script therefore works, unchanged, in either harness.
+//
 // Scope and honesty: this is NOT a security sandbox. It parses the command
 // string well enough to catch the everyday mistakes an agent makes (wrong PR
 // base, push to a protected branch, --no-verify, force push). It deliberately
@@ -20,15 +24,24 @@ import { join, dirname } from "node:path";
 
 const NAME = "branch-guard";
 
-function findConfig() {
+function findConfig(payloadCwd) {
+  // Claude Code exposes CLAUDE_PROJECT_DIR; Codex exposes no project-dir env var
+  // but carries the session cwd in the payload. Walk up from each known start so
+  // the config is found whether the hook runs at the repo root or a subdir.
+  const starts = [];
+  if (process.env.CLAUDE_PROJECT_DIR) starts.push(process.env.CLAUDE_PROJECT_DIR);
+  if (payloadCwd) starts.push(payloadCwd);
+  starts.push(process.cwd());
+
   const candidates = [];
-  if (process.env.CLAUDE_PROJECT_DIR) candidates.push(process.env.CLAUDE_PROJECT_DIR);
-  let dir = process.cwd();
-  for (let i = 0; i < 20; i++) {
-    candidates.push(dir);
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+  for (const start of starts) {
+    let dir = start;
+    for (let i = 0; i < 20; i++) {
+      candidates.push(dir);
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
   }
   for (const c of candidates) {
     const p = join(c, "dienstweg.config.json");
@@ -143,7 +156,7 @@ if (typeof command !== "string") process.exit(0);
 
 let config = null;
 try {
-  config = findConfig();
+  config = findConfig(typeof payload?.cwd === "string" ? payload.cwd : null);
 } catch {
   config = null;
 }

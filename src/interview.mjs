@@ -13,7 +13,7 @@ function capitalize(name) {
 
 export function detectExistingProject(root) {
   const signals = [];
-  for (const f of ["CLAUDE.md", "AGENTS.md", ".claude", "package.json", "src"]) {
+  for (const f of ["CLAUDE.md", "AGENTS.md", ".claude", ".codex", "package.json", "src"]) {
     if (existsSync(join(root, f))) signals.push(f);
   }
   return signals;
@@ -24,6 +24,16 @@ function parseList(value) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+// Maps the --harness flag / interview answer to the config array. "both" (the
+// default) installs for every known harness; a comma list selects a subset.
+// Unknown values pass through unchanged and are caught by validateConfig with a
+// clear message, so the interview stays simple.
+export function parseHarnesses(value) {
+  const v = String(value).trim().toLowerCase();
+  if (v === "" || v === "both" || v === "all") return ["claude", "codex"];
+  return v.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 // Collects all init answers. Flags always win; in --yes mode the remaining
@@ -68,6 +78,9 @@ export async function runInterview(root, flags) {
 
     const project = flags.name ?? (await ask("Project name", defaults.project));
     const language = flags.language ?? (await ask("Conversation language (en/de/...)", defaults.language));
+    const harnesses = flags.harness !== undefined
+      ? parseHarnesses(flags.harness)
+      : parseHarnesses(await ask('Agent harnesses to set up ("both", "claude", or "codex")', "both"));
     const issuePrefix = (flags.prefix ?? (await ask("Linear issue prefix (team key)", derivePrefix(project)))).toUpperCase();
     const linearTeam = flags.team ?? (await ask("Linear team name", capitalize(project)));
     const defaultProject = flags.project ?? (await ask("Default Linear project (empty = team backlog)", defaults.defaultProject));
@@ -90,6 +103,7 @@ export async function runInterview(root, flags) {
       signals,
       project,
       language,
+      harnesses,
       issuePrefix,
       linearTeam,
       defaultProject,

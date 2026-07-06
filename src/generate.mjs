@@ -18,11 +18,35 @@ import {
 
 const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "templates");
 
-export const GENERATED_FILES = [
-  { template: "commands/create-issue.md", target: ".claude/commands/create-issue.md", kind: "md" },
-  { template: "commands/start-task.md", target: ".claude/commands/start-task.md", kind: "md" },
-  { template: "hooks/branch-guard.mjs", target: ".claude/hooks/branch-guard.mjs", kind: "mjs" },
-];
+// Tool-owned files per harness. The branch-guard script is ONE shared template
+// rendered byte-identically into each harness's hook dir (it self-adapts at
+// runtime); the command surface differs by harness - Claude Code reads
+// repo-committed slash-commands under .claude/commands, Codex reads
+// repo-committed skills under .agents/skills (its non-deprecated, repo-shared
+// prompt mechanism).
+const HARNESS_FILES = {
+  claude: [
+    { template: "claude/commands/create-issue.md", target: ".claude/commands/create-issue.md", kind: "md" },
+    { template: "claude/commands/start-task.md", target: ".claude/commands/start-task.md", kind: "md" },
+    { template: "hooks/branch-guard.mjs", target: ".claude/hooks/branch-guard.mjs", kind: "mjs" },
+  ],
+  codex: [
+    { template: "codex/skills/create-issue/SKILL.md", target: ".agents/skills/create-issue/SKILL.md", kind: "md" },
+    { template: "codex/skills/start-task/SKILL.md", target: ".agents/skills/start-task/SKILL.md", kind: "md" },
+    { template: "hooks/branch-guard.mjs", target: ".codex/hooks/branch-guard.mjs", kind: "mjs" },
+  ],
+};
+
+// The tool-owned file specs for the given active harnesses, in a stable order.
+// Every consumer that used to iterate a flat GENERATED_FILES list now derives
+// the list from config.harnesses so inactive-harness files are never expected.
+export function generatedFiles(harnesses) {
+  const specs = [];
+  for (const h of harnesses || []) {
+    for (const spec of HARNESS_FILES[h] || []) specs.push(spec);
+  }
+  return specs;
+}
 
 export function sha256(content) {
   return createHash("sha256").update(content).digest("hex");
@@ -64,10 +88,14 @@ export function renderAgentsBlock(config) {
   const mergePolicy = autoMerge
     ? `**Auto-merge (on, \`merge.auto: true\`):** after a clean review loop, merge autonomously - no asking. Gates (all mandatory): ${mergeGates}, no user override ("do not merge automatically" holds for the whole session). Gate violated -> do not merge, report status.`
     : `**Auto-merge (off, \`merge.auto: false\`):** NEVER merge autonomously. After a clean review loop: check off the DoD boxes, write \`## Final Summary\` (merge-SHA placeholder + PR number), set \`state="In Review"\`, then report the PR URL + gate status and stop - the merge is the user's decision. Merge only on an explicit user instruction; the gates (${mergeGates}) plus the post-merge base sync and the \`state="Done"\` close-out still apply then.`;
+  const harnessLabel = (config.harnesses || [])
+    .map((h) => (h === "claude" ? "Claude Code" : h === "codex" ? "Codex" : h))
+    .join(" + ");
   const tokens = {
     version: CLI_VERSION,
     project: config.project,
     language: config.language,
+    harnesses: harnessLabel,
     issuePrefix: config.tracker.issuePrefix,
     issuePrefixLower: config.tracker.issuePrefix.toLowerCase(),
     linearTeam: config.tracker.linearTeam,
@@ -99,14 +127,14 @@ function writeFileEnsuringDir(path, content) {
   writeFileSync(path, content);
 }
 
-// Writes all tool-owned files and returns the manifest object. `onConflict`
-// decides what happens when a target exists with unexpected content:
-// "overwrite" | "skip". Returns { manifest, skipped } where skipped lists
-// targets left untouched.
-export function writeGeneratedFiles(root, previousManifest, onConflict) {
+// Writes all tool-owned files for the active `harnesses` and returns the
+// manifest object. `onConflict` decides what happens when a target exists with
+// unexpected content: "overwrite" | "skip". Returns { manifest, skipped } where
+// skipped lists targets left untouched.
+export function writeGeneratedFiles(root, previousManifest, onConflict, harnesses) {
   const manifest = { dienstwegVersion: CLI_VERSION, files: {} };
   const skipped = [];
-  for (const spec of GENERATED_FILES) {
+  for (const spec of generatedFiles(harnesses)) {
     const content = renderGeneratedFile(spec.template, spec.kind);
     const targetPath = join(root, spec.target);
     if (existsSync(targetPath)) {
@@ -251,6 +279,65 @@ export function mergeSettings(root) {
   });
   writeFileEnsuringDir(settingsPath, JSON.stringify(settings, null, 2) + "\n");
   return { wired: true, message: "settings.json: added branch-guard PreToolUse hook" };
+}
+
+// Codex discovers PreToolUse hooks in a repo-level .codex/hooks.json (same event
+// schema Claude Code uses). The path is repo-root-relative because Codex exposes
+// no project-dir env var; the script itself locates the config via the payload
+// cwd + a parent-dir walk.
+const CODEX_HOOK_COMMAND = "node .codex/hooks/branch-guard.mjs";
+
+export function codexHookWiredIn(root) {
+  const p = join(root, ".codex", "hooks.json");
+  if (!existsSync(p)) return null;
+  try {
+    const pre = JSON.parse(readFileSync(p, "utf8"))?.hooks?.PreToolUse;
+    if (Array.isArray(pre) && pre.some((e) => (e?.hooks || []).some((h) => (h?.command || "").includes("branch-guard.mjs")))) {
+      return "hooks.json";
+    }
+  } catch {
+    // A malformed file cannot wire the hook; check reports it separately.
+  }
+  return null;
+}
+
+// Merges the branch-guard entry into .codex/hooks.json without touching
+// unrelated hooks. Mirrors mergeSettings: a malformed file yields wired:false so
+// callers reflect it in their exit code instead of a false success.
+export function mergeCodexHooks(root) {
+  if (codexHookWiredIn(root)) {
+    return { wired: true, message: "codex: branch-guard hook already wired (.codex/hooks.json)" };
+  }
+  const p = join(root, ".codex", "hooks.json");
+  let hooks = {};
+  if (existsSync(p)) {
+    try {
+      hooks = JSON.parse(readFileSync(p, "utf8"));
+    } catch {
+      return { wired: false, message: ".codex/hooks.json: NOT valid JSON - branch-guard hook was NOT wired; fix the file and re-run `dienstweg update`" };
+    }
+  }
+  hooks.hooks ??= {};
+  hooks.hooks.PreToolUse ??= [];
+  if (!Array.isArray(hooks.hooks.PreToolUse)) {
+    return { wired: false, message: ".codex/hooks.json: hooks.PreToolUse is not an array - branch-guard hook was NOT wired; fix the file and re-run `dienstweg update`" };
+  }
+  hooks.hooks.PreToolUse.push({
+    matcher: "Bash",
+    hooks: [{ type: "command", command: CODEX_HOOK_COMMAND }],
+  });
+  writeFileEnsuringDir(p, JSON.stringify(hooks, null, 2) + "\n");
+  return { wired: true, message: ".codex/hooks.json: added branch-guard PreToolUse hook" };
+}
+
+// Wires the branch-guard for every active harness. Returns the per-harness
+// results plus an overall `wired` flag (false if ANY active harness failed to
+// wire) for the caller's warning + exit code.
+export function wireHooks(root, harnesses) {
+  const actions = [];
+  if ((harnesses || []).includes("claude")) actions.push(mergeSettings(root));
+  if ((harnesses || []).includes("codex")) actions.push(mergeCodexHooks(root));
+  return { actions, wired: actions.every((a) => a.wired) };
 }
 
 export { STATE_DIR };
