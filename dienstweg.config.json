@@ -25,7 +25,10 @@
     "highRisk": [
       "templates/hooks/branch-guard.mjs"
     ],
-    "singleWriter": []
+    "singleWriter": [
+      "branch-guard",
+      "cli-core"
+    ]
   },
   "review": {
     "ensembleSize": 3,
