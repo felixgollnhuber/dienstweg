@@ -27,7 +27,7 @@ This project follows the dienstweg task workflow. Project values live in `dienst
 4. Before merging the PR: check off all AC + DoD boxes, write `## Final Summary` (merge-SHA placeholder + PR number), set `state="In Review"`. These are Linear description patches, not git commits.
 5. After merge: `state="Done"` + Final Summary with the real merge SHA.
 
-**Parallelism:** exactly one label per issue: `parallel-safe` or `single-writer:<area>` (areas: -). Before starting, check whether another issue holds the same lock.
+**Parallelism:** exactly one label per issue: `parallel-safe` or `single-writer:<area>` (areas: branch-guard, cli-core). Before starting, check whether another issue holds the same lock.
 
 **Review (mandatory before every merge):** 3x ensemble review - 3 independent reviewers with an identical, broad scope, run in parallel, no splitting. The fan-out mechanism is harness-specific (Claude Code: parallel review subagents in one message; Codex: parallel `codex exec` reviewers) - see the start-task command. Fix consensus findings directly, judge singletons critically, decide conflicts explicitly. Re-review on larger fix changes (new logic / high-risk / >50 LOC / >3 new files / interface change), max 3 rounds. A single review pass does not replace the ensemble.
 
