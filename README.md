@@ -173,10 +173,6 @@ Node ≥ 20 · git · at least one of [Claude Code](https://claude.com/claude-co
 
 The full workflow — issue schema, git conventions, review protocol, auto-merge gates, the `/goal` condition — is documented in [WORKFLOW.md](WORKFLOW.md).
 
-## Origin
-
-Extracted and generalized from the internal [internal] / [internal] migration workflow (July 2026), then rebuilt around the config-driven model so it could travel to any repo. Zero runtime dependencies, by design.
-
 ---
 
 <div align="center">
