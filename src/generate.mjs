@@ -13,6 +13,7 @@ import {
   STATE_DIR,
   MARKER_BEGIN,
   MARKER_END,
+  KNOWN_HARNESSES,
   manifestPath,
 } from "./config.mjs";
 
@@ -282,10 +283,12 @@ export function mergeSettings(root) {
 }
 
 // Codex discovers PreToolUse hooks in a repo-level .codex/hooks.json (same event
-// schema Claude Code uses). The path is repo-root-relative because Codex exposes
-// no project-dir env var; the script itself locates the config via the payload
-// cwd + a parent-dir walk.
-const CODEX_HOOK_COMMAND = "node .codex/hooks/branch-guard.mjs";
+// schema Claude Code uses). Codex runs hook commands with the *session* cwd
+// (which may be a subdirectory) and exposes no project-dir env var, so a bare
+// relative path would resolve against the wrong dir; resolve the script from the
+// git root instead (per the Codex hook docs). The script then locates the config
+// itself via the payload cwd + a parent-dir walk.
+const CODEX_HOOK_COMMAND = 'node "$(git rev-parse --show-toplevel)/.codex/hooks/branch-guard.mjs"';
 
 export function codexHookWiredIn(root) {
   const p = join(root, ".codex", "hooks.json");
@@ -338,6 +341,26 @@ export function wireHooks(root, harnesses) {
   if ((harnesses || []).includes("claude")) actions.push(mergeSettings(root));
   if ((harnesses || []).includes("codex")) actions.push(mergeCodexHooks(root));
   return { actions, wired: actions.every((a) => a.wired) };
+}
+
+// Detects tool-owned artifacts of harnesses NOT in the active set that are still
+// on disk - a generated file or a wired branch-guard hook. Narrowing
+// config.harnesses (e.g. both -> claude) does not delete the dropped harness's
+// committed files, so it would keep running the workflow silently; this surfaces
+// that inconsistency instead of auto-deleting committed files. Returns
+// [{ harness, files, wired }].
+export function orphanedHarnessArtifacts(root, activeHarnesses) {
+  const active = new Set(activeHarnesses || []);
+  const orphans = [];
+  for (const h of KNOWN_HARNESSES) {
+    if (active.has(h)) continue;
+    const files = (HARNESS_FILES[h] || [])
+      .map((s) => s.target)
+      .filter((t) => existsSync(join(root, t)));
+    const wired = h === "claude" ? Boolean(hookWiredIn(root)) : h === "codex" ? Boolean(codexHookWiredIn(root)) : false;
+    if (files.length || wired) orphans.push({ harness: h, files, wired });
+  }
+  return orphans;
 }
 
 export { STATE_DIR };
