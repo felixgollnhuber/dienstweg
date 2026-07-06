@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 3,
+  "dienstwegVersion": "0.3.1",
+  "project": "dienstweg",
+  "language": "en",
+  "harnesses": [
+    "claude",
+    "codex"
+  ],
+  "tracker": {
+    "linearTeam": "dienstweg",
+    "issuePrefix": "DIE",
+    "defaultProject": null
+  },
+  "git": {
+    "baseBranch": "main",
+    "protectedBranches": [
+      "main"
+    ]
+  },
+  "gates": {
+    "build": "npm test"
+  },
+  "areas": {
+    "highRisk": [
+      "templates/hooks/branch-guard.mjs"
+    ],
+    "singleWriter": []
+  },
+  "review": {
+    "ensembleSize": 3,
+    "maxRounds": 3,
+    "subagentType": "ensemble-reviewer"
+  },
+  "merge": {
+    "auto": true
+  },
+  "extraDoD": [],
+  "extraConstraints": []
+}
