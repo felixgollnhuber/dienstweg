@@ -102,6 +102,11 @@ test("renderAgentsBlock label for a single harness", () => {
   assert.match(renderAgentsBlock(cfg({ harnesses: ["claude"] })), /Harnesses:\*\* Claude Code\./);
 });
 
+test("renderAgentsBlock renders singleWriter areas", () => {
+  assert.match(renderAgentsBlock(cfg({ singleWriter: ["a", "b"] })), /\(areas: a, b\)/);
+  assert.match(renderAgentsBlock(cfg()), /\(areas: -\)/);
+});
+
 test("renderAgentsBlock reflects merge.auto policy", () => {
   assert.match(renderAgentsBlock(cfg({ autoMerge: true })), /Auto-merge \(on/);
   assert.match(renderAgentsBlock(cfg({ autoMerge: false })), /Auto-merge \(off/);

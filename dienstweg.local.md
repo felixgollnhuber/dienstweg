@@ -1,15 +1,18 @@
 # dienstweg.local.md - project-specific workflow rules
 
-This file is owned by the project and never overwritten by dienstweg. The
-`/create-issue` and `/start-task` commands read it in addition to
-`dienstweg.config.json`. Put everything here that the config schema cannot
-express, for example:
+## Single-writer area map
 
-- A worktree helper script that replaces plain `git worktree add` (and the
-  setup command to run inside a fresh worktree, e.g. `npm ci`).
-- A destructive demo-data/seed command and when it is needed.
-- Additional review focus areas, domain-specific verification steps.
-- Anything an agent must know before touching this repo's tasks.
+The `areas.singleWriter` names in `dienstweg.config.json` cover these files:
 
-Delete this explanatory text once you add real rules. An empty or missing
-file is fine.
+- `branch-guard` - `templates/hooks/branch-guard.mjs`, its generated copies
+  (`.claude/hooks/branch-guard.mjs`, `.codex/hooks/branch-guard.mjs`) and the
+  guard tests (`tests/branch-guard.test.mjs`).
+- `cli-core` - `src/*.mjs`, `bin/dienstweg.mjs`, `migrations/` and their tests.
+
+Files outside both areas (docs, command/skill templates, `templates/agents-block.md`)
+have no lock; an issue may be `parallel-safe` only if it touches no locked area at all.
+
+Tie-break for cross-cutting issues (exactly one label per issue): if the change
+alters branch-guard rule content or its rendered output, take
+`single-writer:branch-guard`, otherwise `single-writer:cli-core` - and check the
+other area's In Progress issues as an explicit dependency before starting.
