@@ -131,6 +131,8 @@ It catches the real forms agents actually emit: `git push -u origin main`, `HEAD
 
 It also blocks `git add` of a secret file — `.env`, `*.pem`, `id_rsa*`, `credentials*` — before it can ride into a commit, while leaving harmless look-alikes like `.env.example` and public keys like `id_rsa.pub` alone. Matching is case-insensitive (so `CERT.PEM` is caught on macOS/Windows too). The denylist is tunable via an optional `guard` block in `dienstweg.config.json`: `secretDenylist` extends the defaults (or replaces them with `secretDenylistReplace: true`), and `secretAllowlist` adds exceptions.
 
+Every decision it makes — a block, a warning, or a **fail-open** (when a broken config forces it to allow) — is appended as one JSON line to `.dienstweg/guard-log.jsonl` (gitignored, best-effort, and unable to change the decision itself). `dienstweg check` then summarizes recent blocks per rule and, crucially, turns recent fail-open events into a FAIL — so a guard that fell open because its config was unreadable is loud, not silent.
+
 It is deliberately **a guardrail against honest mistakes, not a security sandbox.** A determined bypass through obfuscation is always possible, and that is fine — the goal is to stop the slip, not to contain a hostile actor. The docs say so everywhere they can.
 
 ## Command reference
