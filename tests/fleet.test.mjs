@@ -6,6 +6,7 @@ import {
   writeFileSync,
   mkdirSync,
   rmSync,
+  chmodSync,
   realpathSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
@@ -99,6 +100,23 @@ test("readFleet prunes dead paths (missing dir OR missing config) and persists",
   assert.deepEqual(live2, [resolve(live)]);
   // The pruned set is persisted, not just returned.
   assert.deepEqual(readRegistry(home).repos, [resolve(live)]);
+});
+
+test("readFleet self-heal is best-effort: a read-only registry dir does not crash the read", () => {
+  const home = useTempConfigHome();
+  const live = fakeRepo();
+  const gone = fakeRepo();
+  writeFleet([resolve(live), resolve(gone)]);
+  rmSync(gone, { recursive: true, force: true }); // a dead entry to prune
+
+  const dir = join(home, "dienstweg");
+  chmodSync(dir, 0o555); // read-only: the prune write will fail
+  try {
+    // Must not throw; returns the pruned list in-memory even though it can't persist.
+    assert.deepEqual(readFleet(), [resolve(live)]);
+  } finally {
+    chmodSync(dir, 0o755); // restore so cleanup can remove the dir
+  }
 });
 
 // ---------------------------------------------------------------------------

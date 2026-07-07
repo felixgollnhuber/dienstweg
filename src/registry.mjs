@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join, resolve, dirname, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { CONFIG_FILENAME } from "./config.mjs";
@@ -51,7 +51,14 @@ export function writeFleet(repos) {
   const sorted = [...new Set(repos)].sort();
   const tmp = `${p}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify({ version: FLEET_VERSION, repos: sorted }, null, 2) + "\n");
-  renameSync(tmp, p);
+  try {
+    renameSync(tmp, p);
+  } catch (e) {
+    // Don't leave the temp behind if the swap fails (it is never read, only
+    // fleet.json is, but keep the directory clean).
+    rmSync(tmp, { force: true });
+    throw e;
+  }
   return sorted;
 }
 
@@ -68,7 +75,16 @@ export function isLiveRepo(repoPath) {
 export function readFleet() {
   const { repos } = loadFleet();
   const live = repos.filter(isLiveRepo);
-  if (live.length !== repos.length) writeFleet(live);
+  if (live.length !== repos.length) {
+    // Persist the prune best-effort: a readable-but-not-writable registry must
+    // not dead-end a read (e.g. `fleet status`, which promises to always exit
+    // 0). The pruned list is still returned in-memory. Mirrors registerRepo.
+    try {
+      writeFleet(live);
+    } catch {
+      // swallow - self-heal is opportunistic
+    }
+  }
   return live;
 }
 
