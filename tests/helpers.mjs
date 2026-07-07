@@ -55,8 +55,16 @@ export function cleanupAll() {
 // Runs the dienstweg CLI in `cwd` and returns { status, stdout, stderr }.
 // `opts.env` merges into (and overrides) the child env; XDG_CONFIG_HOME defaults
 // to a shared temp dir so the fleet registry stays out of the real ~/.config.
+// DIENSTWEG_ENV_DOCTOR defaults to "off" so `check`'s environment doctor never
+// makes these tests depend on the machine's gh/claude/node state; a test that
+// exercises the doctor overrides it via opts.env (e.g. injected fake readings).
 export function runCli(args, cwd, opts = {}) {
-  const env = { ...process.env, XDG_CONFIG_HOME: ensureDefaultConfigHome(), ...opts.env };
+  const env = {
+    ...process.env,
+    XDG_CONFIG_HOME: ensureDefaultConfigHome(),
+    DIENSTWEG_ENV_DOCTOR: "off",
+    ...opts.env,
+  };
   const r = spawnSync("node", [BIN, ...args], { cwd, encoding: "utf8", env });
   return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
 }

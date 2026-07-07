@@ -11,7 +11,7 @@ Usage: dienstweg <command> [flags]
 Commands:
   init      Set up dienstweg in the current repo (interactive interview).
   update    Regenerate tool-owned files, run config migrations, bump version stamp.
-  check     Verify the setup (config, generated files, hook wiring, AGENTS block).
+  check     Verify the setup (config, generated files, hook wiring, AGENTS block, environment).
   fleet     Run status/check/update across every repo dienstweg manages.
   version   Print the CLI version.
   help      Show this help.

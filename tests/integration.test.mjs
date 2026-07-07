@@ -116,3 +116,56 @@ test("check flags an unwired Codex hook", () => {
   assert.equal(chk.status, 1);
   assert.match(chk.stderr, /not wired for Codex/);
 });
+
+// Environment doctor, end-to-end through the real CLI. Readings are injected via
+// DIENSTWEG_ENV_DOCTOR (JSON) so the assertions never depend on the machine's real
+// gh/claude/node - proving the runCheck merge, exit code, and FAIL/INFO wiring.
+const initDemo = (root) =>
+  assert.equal(runCli(["init", "--yes", "--harness", "both", "--name", "d", "--prefix", "D"], root).status, 0);
+
+test("check surfaces environment-doctor FAILs (injected readings) and exits 1", () => {
+  const root = tmpRepo();
+  initDemo(root);
+  const failing = JSON.stringify({
+    node: { version: "18.0.0" },
+    gh: { installed: true, authenticated: false },
+    claudeCode: { installed: true, version: "2.1.100" },
+    linearMcp: { visible: false },
+  });
+  const chk = runCli(["check"], root, { env: { DIENSTWEG_ENV_DOCTOR: failing } });
+  assert.equal(chk.status, 1);
+  assert.match(chk.stderr, />= 20/); // Node FAIL on stderr
+  assert.match(chk.stderr, /not authenticated/); // gh FAIL on stderr
+  assert.match(chk.stdout, /Linear MCP not detected/); // best-effort INFO on stdout
+});
+
+test("check passes with healthy injected environment readings", () => {
+  const root = tmpRepo();
+  initDemo(root);
+  const healthy = JSON.stringify({
+    node: { version: "22.0.0" },
+    gh: { installed: true, authenticated: true },
+    claudeCode: { installed: true, version: "9.9.9" },
+    linearMcp: { visible: true },
+  });
+  const chk = runCli(["check"], root, { env: { DIENSTWEG_ENV_DOCTOR: healthy } });
+  assert.equal(chk.status, 0, chk.stderr);
+  assert.match(chk.stdout, /check: OK/);
+});
+
+test("check --json includes environment-doctor findings in problems/infos", () => {
+  const root = tmpRepo();
+  initDemo(root);
+  const failing = JSON.stringify({
+    node: { version: "18.0.0" },
+    gh: { installed: false },
+    claudeCode: { installed: true, version: "9.9.9" },
+    linearMcp: { visible: false },
+  });
+  const chk = runCli(["check", "--json"], root, { env: { DIENSTWEG_ENV_DOCTOR: failing } });
+  assert.equal(chk.status, 1);
+  const parsed = JSON.parse(chk.stdout);
+  assert.equal(parsed.ok, false);
+  assert.ok(parsed.problems.some((p) => />= 20/.test(p)), "node FAIL should appear in json problems");
+  assert.ok(parsed.infos.some((i) => /gh .*not found/i.test(i)), "gh INFO should appear in json infos");
+});
