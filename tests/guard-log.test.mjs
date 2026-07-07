@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmp, tmpRepo, cleanupAll, runCli } from "./helpers.mjs";
+import { tmp, tmpRepo, cleanupAll, runCli, runGuard } from "./helpers.mjs";
 import {
   guardLogDiagnostics,
   readGuardLog,
@@ -85,6 +85,19 @@ test("guardLogDiagnostics: no log file -> no diagnostics, never throws", () => {
   assert.equal(problems.length, 0);
 });
 
+// warn decisions (e.g. gh pr merge without a strategy) are logged for the record
+// but deliberately NOT surfaced by check - this pins that so a future change that
+// starts surfacing them is a conscious one.
+test("guardLogDiagnostics: warn decisions are logged but not surfaced", () => {
+  const dir = tmp("dienstweg-gl-");
+  writeLog(dir, [
+    { ts: ago(1000), rule: "pr-merge-no-strategy", decision: "warn", command: "gh pr merge 5" },
+  ]);
+  const { infos, problems } = guardLogDiagnostics(dir, NOW);
+  assert.equal(infos.length, 0);
+  assert.equal(problems.length, 0);
+});
+
 // AC #3 end-to-end: a recent fail-open makes `dienstweg check` FAIL (exit 1) and
 // name the event; a recent block surfaces as an INFO while check still passes.
 test("check reports a fail-open event as FAIL (exit 1)", () => {
@@ -129,4 +142,19 @@ test("init gitignores the guard log, and update keeps it idempotent", () => {
     1,
     "the entry appears exactly once after update",
   );
+});
+
+// Path sync: the standalone hook hardcodes ".dienstweg/guard-log.jsonl" while the
+// CLI derives guardLogPath from STATE_DIR. This drives the REAL hook against an
+// initialized repo and then reads it back through check - a STATE_DIR/filename
+// drift between the two would break this end-to-end.
+test("hook -> check path sync: a real guard block surfaces in check (INFO, exit 0)", () => {
+  const root = tmpRepo();
+  runCli(["init", "--yes", "--harness", "both", "--name", "d", "--prefix", "D"], root);
+  const g = runGuard("git push origin main", root, "codex");
+  assert.equal(g.status, 2, "the hook blocks the protected push");
+  const chk = runCli(["check"], root);
+  assert.equal(chk.status, 0, chk.stdout + chk.stderr);
+  assert.match(chk.stdout, /recent block\(s\)/);
+  assert.match(chk.stdout, /push-protected/);
 });

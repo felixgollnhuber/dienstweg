@@ -13,9 +13,12 @@ import { STATE_DIR } from "./config.mjs";
 export const GUARD_LOG_FILENAME = "guard-log.jsonl";
 export const GUARD_LOG_GITIGNORE_ENTRY = `${STATE_DIR}/${GUARD_LOG_FILENAME}`;
 
-// How far back `check` looks when summarizing the log. Bounds the fail-open FAIL
-// so it self-heals once old events age out, and keeps the read cheap on a log
-// that only ever grows.
+// How far back `check` looks when summarizing the log. This bounds what is
+// *reported* (so the fail-open FAIL self-heals once old events age out) - it does
+// NOT bound the read: readGuardLog still reads and parses the whole append-only
+// file, then filters by window. The log is a low-volume debug artifact (blocks
+// and fail-opens are rare), so reading it whole is acceptable; there is no
+// rotation today.
 export const GUARD_LOG_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function guardLogPath(root) {
@@ -89,7 +92,7 @@ export function guardLogDiagnostics(root, now = Date.now()) {
 
   if (failOpen.length > 0) {
     problems.push(
-      `branch-guard fell open ${failOpen.length} time(s) in the last 7d (config unreadable at hook runtime) - the guard was inert and a git-rule violation may have slipped through. Fix dienstweg.config.json (see \`dienstweg check\` above), then clear ${GUARD_LOG_GITIGNORE_ENTRY} once resolved.`,
+      `branch-guard fell open ${failOpen.length} time(s) in the last 7d (config missing or unreadable at hook runtime) - the guard was inert and a git-rule violation may have slipped through. If dienstweg.config.json is still broken, fix it (any config problem is reported above); once it is healthy, clear ${GUARD_LOG_GITIGNORE_ENTRY} to reset this (past events linger in the 7d window).`,
     );
   }
 

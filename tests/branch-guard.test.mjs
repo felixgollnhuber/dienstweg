@@ -313,3 +313,25 @@ test("guard log: every block rule logs its stable id", () => {
     assert.equal(log[0].rule, rule, `rule id for: ${cmd}`);
   }
 });
+
+// Inline URL credentials must not be persisted verbatim (this guard's own job
+// includes secret hygiene, so its log must not leak a token).
+test("guard log: inline URL credentials are redacted before logging", () => {
+  const dir = loggingProject();
+  // reset --hard blocks unambiguously; the credential rides along in the command.
+  runGuard("git reset --hard https://alice:s3cr3t-token@github.com/o/r", dir, "codex");
+  const log = readGuardLog(dir);
+  assert.equal(log.length, 1);
+  assert.doesNotMatch(log[0].command, /s3cr3t-token/, "the token must not appear");
+  assert.match(log[0].command, /alice:\*\*\*@/, "the credential is redacted");
+});
+
+// The logged command is truncated so a runaway one-liner cannot bloat the log.
+test("guard log: the logged command is truncated to 500 chars", () => {
+  const dir = loggingProject();
+  const long = "git push origin main " + "x".repeat(600);
+  assert.equal(runGuard(long, dir, "codex").status, 2);
+  const log = readGuardLog(dir);
+  assert.equal(log.length, 1);
+  assert.ok(log[0].command.length <= 500, `command length ${log[0].command.length} <= 500`);
+});
