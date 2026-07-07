@@ -6,6 +6,7 @@ import {
   classifyEnvironment,
   probeEnvironment,
   detectLinearMcp,
+  interpretGhAuth,
   runEnvDoctor,
   MIN_CLAUDE_CODE_VERSION,
   ENV_DOCTOR_VAR,
@@ -134,24 +135,57 @@ test("detectLinearMcp: matches enabledMcpjsonServers in .claude settings", () =>
   assert.equal(detectLinearMcp(root).visible, true);
 });
 
-test("detectLinearMcp: reports not-visible for an unrelated / empty repo", () => {
+test("detectLinearMcp: reports not-visible for an unrelated repo (hermetic, no home read)", () => {
   const root = tmpRepo();
   writeFileSync(join(root, ".mcp.json"), JSON.stringify({ mcpServers: { github: { command: "gh-mcp" } } }));
-  // Note: this reads the real ~/.claude.json too; guard against a genuine local
-  // Linear config by only asserting the .mcp.json path does not itself match.
-  const res = detectLinearMcp(root);
-  assert.equal(typeof res.visible, "boolean");
+  // Inject candidates scoped to the tmp repo so the real ~/.claude.json (which may
+  // legitimately configure Linear on a dev machine) can't turn this positive.
+  const res = detectLinearMcp(root, [join(root, ".mcp.json")]);
+  assert.deepEqual(res, { visible: false, source: null });
+});
+
+test("detectLinearMcp: finds a linear server in a global-style ~/.claude.json", () => {
+  const root = tmpRepo();
+  const claudeJson = join(tmp(), ".claude.json");
+  writeFileSync(claudeJson, JSON.stringify({ projects: { "/some/repo": { mcpServers: { "linear-dienstweg": { command: "npx" } } } } }));
+  const res = detectLinearMcp(root, [join(root, ".mcp.json"), claudeJson]);
+  assert.equal(res.visible, true);
+  assert.equal(res.source, claudeJson);
 });
 
 test("detectLinearMcp: never throws on a corrupt config file", () => {
   const root = tmpRepo();
   writeFileSync(join(root, ".mcp.json"), "{ not json");
-  assert.doesNotThrow(() => detectLinearMcp(root));
+  assert.doesNotThrow(() => detectLinearMcp(root, [join(root, ".mcp.json")]));
+});
+
+// --- interpretGhAuth: distinguishes "not logged in" (FAIL) from offline (INFO) ---
+
+test("interpretGhAuth: exit 0 is authenticated", () => {
+  assert.deepEqual(interpretGhAuth(0, ""), { installed: true, authenticated: true });
+});
+
+test("interpretGhAuth: non-zero with a 'not logged in' message is unauthenticated", () => {
+  const r = interpretGhAuth(1, "You are not logged into any GitHub hosts. To log in, run: gh auth login");
+  assert.equal(r.authenticated, false);
+});
+
+test("interpretGhAuth: non-zero with a network error degrades to undeterminable", () => {
+  for (const msg of ["error connecting to github.com", "dial tcp: lookup github.com: no such host", "request timed out"]) {
+    assert.equal(interpretGhAuth(1, msg).authenticated, null, msg);
+  }
+});
+
+test("interpretGhAuth: a bare non-zero exit defaults to unauthenticated", () => {
+  assert.equal(interpretGhAuth(1, "").authenticated, false);
 });
 
 // --- probeEnvironment / runEnvDoctor: injection seam + never-throws ---
 
 test("probeEnvironment: returns the documented shape and never throws (real probe)", () => {
+  // The one host-dependent test: it spawns the real gh/claude (each with a 3s
+  // timeout) and reads the real ~/.claude.json. It asserts only the SHAPE, never
+  // content, so it stays green on any machine - it exists to prove never-throws.
   const root = tmp();
   let readings;
   assert.doesNotThrow(() => { readings = probeEnvironment(root); });

@@ -87,7 +87,8 @@ export function classifyEnvironment(readings = {}) {
 
 // Impure, best-effort, NEVER throws. Gathers raw readings for classifyEnvironment.
 // A JSON value in ENV_DOCTOR_VAR is treated as injected fake readings so CLI tests
-// can drive deterministic output without a real gh/claude on the machine.
+// can drive deterministic output without a real gh/claude on the machine. (The
+// ENV_DOCTOR_VAR="off" skip lives one layer up, in runEnvDoctor, not here.)
 export function probeEnvironment(root) {
   const injected = injectedReadings();
   if (injected) return injected;
@@ -106,19 +107,25 @@ export function runEnvDoctor(root) {
   return classifyEnvironment(probeEnvironment(root));
 }
 
-// Best-effort scan for a configured Linear MCP server. We cannot know from a CLI
-// subprocess whether the *agent* actually sees the server, so we look for evidence
-// in the known MCP config files - repo-local (.mcp.json, .claude/settings*.json)
-// and the user-global ~/.claude.json - matching /linear/i in an mcpServers entry
-// (or a Claude Code enabledMcpjsonServers list). Every read is guarded; a missing
-// or corrupt file simply does not count.
-export function detectLinearMcp(root) {
-  const candidates = [
+// The config files we treat as evidence of a configured Linear MCP server:
+// repo-local (.mcp.json, .claude/settings*.json) + the user-global ~/.claude.json.
+// Exposed and injectable into detectLinearMcp so tests can scope the scan to a tmp
+// dir instead of reading the developer's real home config.
+export function linearMcpCandidates(root) {
+  return [
     join(root, ".mcp.json"),
     join(root, ".claude", "settings.json"),
     join(root, ".claude", "settings.local.json"),
     join(homedir(), ".claude.json"),
   ];
+}
+
+// Best-effort scan for a configured Linear MCP server. We cannot know from a CLI
+// subprocess whether the *agent* actually sees the server, so we look for evidence
+// in the known MCP config files, matching /linear/i in an mcpServers entry (or a
+// Claude Code enabledMcpjsonServers list). Every read is guarded; a missing or
+// corrupt file simply does not count.
+export function detectLinearMcp(root, candidates = linearMcpCandidates(root)) {
   for (const p of candidates) {
     if (configMentionsLinear(readJson(p))) return { visible: true, source: p };
   }
@@ -182,14 +189,29 @@ function safe(fn, fallback) {
 function probeGh() {
   const r = spawnSync("gh", ["auth", "status"], { timeout: PROBE_TIMEOUT_MS, encoding: "utf8" });
   if (r.error) {
-    // ENOENT -> not installed; any other spawn error -> installed but undeterminable.
+    // ENOENT -> not installed; any other spawn error (incl. the timeout, which
+    // sets r.error with status null) -> installed but undeterminable.
     if (r.error.code === "ENOENT") return { installed: false, authenticated: null };
     return { installed: true, authenticated: null };
   }
-  if (r.status === 0) return { installed: true, authenticated: true };
-  if (typeof r.status === "number") return { installed: true, authenticated: false };
-  // status null (e.g. killed by the timeout) -> undeterminable.
+  if (typeof r.status === "number") {
+    return interpretGhAuth(r.status, `${r.stderr || ""}\n${r.stdout || ""}`);
+  }
+  // status null with no error set -> killed by an external signal, undeterminable.
   return { installed: true, authenticated: null };
+}
+
+// Pure classification of a completed `gh auth status` run. Exit 0 -> authenticated.
+// A non-zero exit means EITHER "not logged in" (a real setup gap -> FAIL) OR "could
+// not reach GitHub to validate the stored token" i.e. offline (-> INFO, per the
+// graceful-degradation policy). Only a network-error signal in the output degrades;
+// a bare non-zero exit is overwhelmingly "not logged in", so it defaults to FAIL.
+export function interpretGhAuth(status, output = "") {
+  if (status === 0) return { installed: true, authenticated: true };
+  if (/network|timeout|timed out|connect|dial|lookup|EAI_AGAIN|offline|temporarily unavailable|no such host/i.test(String(output))) {
+    return { installed: true, authenticated: null };
+  }
+  return { installed: true, authenticated: false };
 }
 
 function probeClaudeCode() {

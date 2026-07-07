@@ -169,3 +169,21 @@ test("check --json includes environment-doctor findings in problems/infos", () =
   assert.ok(parsed.problems.some((p) => />= 20/.test(p)), "node FAIL should appear in json problems");
   assert.ok(parsed.infos.some((i) => /gh .*not found/i.test(i)), "gh INFO should appear in json infos");
 });
+
+test("check skips the environment doctor when the config is invalid JSON", () => {
+  const root = tmpRepo();
+  writeFileSync(join(root, "dienstweg.config.json"), "{ not valid json");
+  const failing = JSON.stringify({
+    node: { version: "18.0.0" },
+    gh: { installed: false },
+    claudeCode: { installed: true, version: "2.1.100" },
+    linearMcp: { visible: false },
+  });
+  const chk = runCli(["check"], root, { env: { DIENSTWEG_ENV_DOCTOR: failing } });
+  assert.equal(chk.status, 1);
+  assert.match(chk.stderr, /not valid JSON/);
+  // The doctor must NOT run without a loaded config: the config-error output stays
+  // byte-for-byte as before, with none of the injected env findings leaking in.
+  assert.doesNotMatch(chk.stdout + chk.stderr, />= 20/);
+  assert.doesNotMatch(chk.stdout + chk.stderr, /Linear MCP not detected/);
+});

@@ -190,9 +190,10 @@ export function runCheck(root, opts = {}) {
   // Environment doctor: machine-level prerequisites (Node, gh, Claude Code, Linear
   // MCP). Deliberately kept OUT of computeCheck so the per-repo path (fleet + its
   // --json) never spawns the probes or emits duplicate lines; merged in here for
-  // the interactive / `--json` check only, and only for a configured repo (noConfig
-  // keeps its original early-out contract).
-  const env = result.noConfig ? { problems: [], infos: [] } : runEnvDoctor(root);
+  // the interactive / `--json` check only. Gated on a loaded config so BOTH the
+  // noConfig path and the invalid-JSON path (config === null) skip it - the latter
+  // keeps computeCheck's byte-for-byte config-error output unchanged.
+  const env = result.config ? runEnvDoctor(root) : { problems: [], infos: [] };
   const merged = {
     ...result,
     problems: [...result.problems, ...env.problems],
