@@ -19,6 +19,7 @@ import {
   agentsMarkerState,
 } from "./generate.mjs";
 import { guardLogDiagnostics } from "./guard-log.mjs";
+import { runEnvDoctor } from "./env-doctor.mjs";
 
 const NO_CONFIG_MSG = "no dienstweg.config.json found - run `dienstweg init` first.";
 
@@ -194,25 +195,38 @@ export function checkJson(root, result) {
 // human report for the machine-readable one; the exit code is identical.
 export function runCheck(root, opts = {}) {
   const result = computeCheck(root);
+  // Environment doctor: machine-level prerequisites (Node, gh, Claude Code, Linear
+  // MCP). Deliberately kept OUT of computeCheck so the per-repo path (fleet + its
+  // --json) never spawns the probes or emits duplicate lines; merged in here for
+  // the interactive / `--json` check only. Gated on a loaded config so BOTH the
+  // noConfig path and the invalid-JSON path (config === null) skip it - the latter
+  // keeps computeCheck's byte-for-byte config-error output unchanged.
+  const env = result.config ? runEnvDoctor(root) : { problems: [], infos: [] };
+  const merged = {
+    ...result,
+    problems: [...result.problems, ...env.problems],
+    infos: [...result.infos, ...env.infos],
+    ok: result.ok && env.problems.length === 0,
+  };
 
   if (opts.json) {
-    console.log(JSON.stringify(checkJson(root, result), null, 2));
-    return result.ok ? 0 : 1;
+    console.log(JSON.stringify(checkJson(root, merged), null, 2));
+    return merged.ok ? 0 : 1;
   }
 
-  if (result.noConfig) {
+  if (merged.noConfig) {
     console.error(`check: ${NO_CONFIG_MSG}`);
     return 1;
   }
 
-  for (const info of result.infos) console.log(`INFO  ${info}`);
-  if (result.ok) {
-    const c = result.config;
+  for (const info of merged.infos) console.log(`INFO  ${info}`);
+  if (merged.ok) {
+    const c = merged.config;
     console.log(`check: OK (dienstweg v${c.dienstwegVersion}, project "${c.project}", prefix ${c.tracker.issuePrefix}, base ${c.git.baseBranch})`);
     return 0;
   }
-  for (const p of result.problems) console.error(`FAIL  ${p}`);
-  console.error(`check: ${result.problems.length} problem(s) found.`);
+  for (const p of merged.problems) console.error(`FAIL  ${p}`);
+  console.error(`check: ${merged.problems.length} problem(s) found.`);
   return 1;
 }
 
