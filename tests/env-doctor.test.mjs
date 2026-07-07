@@ -171,7 +171,14 @@ test("interpretGhAuth: non-zero with a 'not logged in' message is unauthenticate
 });
 
 test("interpretGhAuth: non-zero with a network error degrades to undeterminable", () => {
-  for (const msg of ["error connecting to github.com", "dial tcp: lookup github.com: no such host", "request timed out"]) {
+  const networkMsgs = [
+    "error connecting to github.com",
+    "dial tcp: lookup github.com: no such host",
+    "request timed out",
+    'Get "https://api.github.com/": context deadline exceeded',
+    "connect: network is unreachable",
+  ];
+  for (const msg of networkMsgs) {
     assert.equal(interpretGhAuth(1, msg).authenticated, null, msg);
   }
 });

@@ -201,6 +201,12 @@ function probeGh() {
   return { installed: true, authenticated: null };
 }
 
+// Substring signals that a non-zero `gh auth status` exit is a NETWORK failure
+// (offline / DNS / timeout) rather than "not logged in". gh is a Go binary, so
+// these mirror Go's net-error strings ("dial", "lookup", "no such host", "deadline
+// exceeded", "network is unreachable"); EAI_AGAIN is belt-and-suspenders.
+const GH_NETWORK_ERROR_RE = /network|unreachable|timeout|timed out|deadline exceeded|connect|dial|lookup|EAI_AGAIN|offline|temporarily unavailable|no such host/i;
+
 // Pure classification of a completed `gh auth status` run. Exit 0 -> authenticated.
 // A non-zero exit means EITHER "not logged in" (a real setup gap -> FAIL) OR "could
 // not reach GitHub to validate the stored token" i.e. offline (-> INFO, per the
@@ -208,7 +214,7 @@ function probeGh() {
 // a bare non-zero exit is overwhelmingly "not logged in", so it defaults to FAIL.
 export function interpretGhAuth(status, output = "") {
   if (status === 0) return { installed: true, authenticated: true };
-  if (/network|timeout|timed out|connect|dial|lookup|EAI_AGAIN|offline|temporarily unavailable|no such host/i.test(String(output))) {
+  if (GH_NETWORK_ERROR_RE.test(String(output))) {
     return { installed: true, authenticated: null };
   }
   return { installed: true, authenticated: false };
