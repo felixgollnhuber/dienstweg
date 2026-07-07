@@ -65,6 +65,17 @@ const BLOCK = [
   "git restore -SW .",
   "git restore ./",
   "git -C sub clean -f",
+  // Secret-file staging (DIE-7) - both payload shapes: plain add and force-add.
+  "git add .env",
+  "git add -f .env",
+  "git add --force .env",
+  "git add secrets/id_rsa",
+  "git add config/prod.pem",
+  "git add credentials.json",
+  "git add path/to/.env.local",
+  "git add -- .env",
+  "git add src/app.js .env",
+  "git -C sub add .env",
 ];
 
 // Commands that MUST be allowed (exit 0) - legitimate look-alikes.
@@ -98,6 +109,16 @@ const ALLOW = [
   "git branch -D throwaway-experiment",
   "git worktree remove .claude/worktrees/tasks+x",
   "git worktree list",
+  // Secret-file look-alikes and whole-tree adds stay allowed (DIE-7).
+  "git add .env.example",
+  "git add -f .env.example",
+  "git add .env.sample",
+  "git add src/app.js",
+  "git add .",
+  "git add -A",
+  "git add -p",
+  "git add README.md",
+  "git add environment.ts",
 ];
 
 const dir = project();
@@ -133,4 +154,34 @@ test("no config found -> guard allows (exit 0) and does not lock up work", () =>
   const empty = tmp("dienstweg-noconfig-");
   const { status } = runGuard("git push origin main", empty, "codex");
   assert.equal(status, 0);
+});
+
+// A project dir with a custom guard block for the secret denylist (DIE-7).
+function guardProject(guard) {
+  const dir = tmp("dienstweg-guard-cfg-");
+  writeFileSync(
+    join(dir, "dienstweg.config.json"),
+    JSON.stringify({ git: { baseBranch: "main", protectedBranches: ["main"] }, guard }),
+  );
+  return dir;
+}
+
+// AC #3: the secret denylist can be extended or overridden via the config.
+test("secret denylist: guard config extends the defaults", () => {
+  const ext = guardProject({ secretDenylist: ["*.key"] });
+  assert.equal(runGuard("git add .env", ext, "codex").status, 2, "default still blocks");
+  assert.equal(runGuard("git add app.key", ext, "codex").status, 2, "extended pattern blocks");
+  assert.equal(runGuard("git add app.js", ext, "codex").status, 0, "unrelated file allowed");
+});
+
+test("secret denylist: secretDenylistReplace overrides the defaults", () => {
+  const rep = guardProject({ secretDenylist: ["*.key"], secretDenylistReplace: true });
+  assert.equal(runGuard("git add .env", rep, "codex").status, 0, "default gone when replaced");
+  assert.equal(runGuard("git add app.key", rep, "codex").status, 2, "replacement pattern blocks");
+});
+
+test("secret denylist: secretAllowlist exempts a would-be-denied file", () => {
+  const alw = guardProject({ secretAllowlist: ["credentials.json"] });
+  assert.equal(runGuard("git add credentials.json", alw, "codex").status, 0, "allowlisted file exempted");
+  assert.equal(runGuard("git add credentials.yml", alw, "codex").status, 2, "non-exempt secret still blocked");
 });
