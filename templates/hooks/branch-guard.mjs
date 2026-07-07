@@ -49,11 +49,15 @@ const GUARD_LOG_REL = ".dienstweg/guard-log.jsonl";
 function logDecision(rule, decision) {
   try {
     if (!logDir) return;
-    // Redact obvious inline URL credentials (`scheme://user:token@host`) before
-    // logging: this guard's own job includes secret hygiene, so its log - though
-    // gitignored and per-machine - should not persist a password/token verbatim.
-    // Redact first, then truncate, so a secret near the 500-char cut is still hidden.
-    const safe = command.replace(/(:\/\/[^/\s:@]+):[^/\s@]+@/g, "$1:***@");
+    // Redact inline URL credentials before logging: this guard's own job includes
+    // secret hygiene, so its log - though gitignored and per-machine - should not
+    // persist a token/password verbatim. Everything between `scheme://` and the
+    // `@` of a `host` authority is replaced, covering both `user:token@host` and
+    // token-only `token@host` forms (the `[^/\s]` class stops at the path, so a
+    // literal `@` inside the path is untouched). Redact first, then truncate, so a
+    // secret near the 500-char cut is still hidden. The regex has a single
+    // quantifier - linear, no catastrophic backtracking.
+    const safe = command.replace(/(:\/\/)[^/\s]+@/g, "$1***@");
     const line = JSON.stringify({
       ts: new Date().toISOString(),
       rule,

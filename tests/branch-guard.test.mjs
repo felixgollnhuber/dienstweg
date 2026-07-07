@@ -317,13 +317,19 @@ test("guard log: every block rule logs its stable id", () => {
 // Inline URL credentials must not be persisted verbatim (this guard's own job
 // includes secret hygiene, so its log must not leak a token).
 test("guard log: inline URL credentials are redacted before logging", () => {
-  const dir = loggingProject();
   // reset --hard blocks unambiguously; the credential rides along in the command.
-  runGuard("git reset --hard https://alice:s3cr3t-token@github.com/o/r", dir, "codex");
-  const log = readGuardLog(dir);
-  assert.equal(log.length, 1);
-  assert.doesNotMatch(log[0].command, /s3cr3t-token/, "the token must not appear");
-  assert.match(log[0].command, /alice:\*\*\*@/, "the credential is redacted");
+  // Both the user:token@ and the token-only@ forms must be redacted.
+  for (const [cmd, secret] of [
+    ["git reset --hard https://alice:s3cr3t-tok@github.com/o/r", "s3cr3t-tok"],
+    ["git reset --hard https://ghp_deadbeefTOKEN@github.com/o/r", "ghp_deadbeefTOKEN"],
+  ]) {
+    const dir = loggingProject();
+    assert.equal(runGuard(cmd, dir, "codex").status, 2);
+    const log = readGuardLog(dir);
+    assert.equal(log.length, 1);
+    assert.doesNotMatch(log[0].command, new RegExp(secret), `token hidden: ${cmd}`);
+    assert.match(log[0].command, /:\/\/\*\*\*@github\.com/, `credential redacted: ${cmd}`);
+  }
 });
 
 // The logged command is truncated so a runaway one-liner cannot bloat the log.
