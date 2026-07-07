@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Ensemble review stances (config schema v4).** New config key `review.stances` (default `["adversarial", "spec-conformance", "maintainer"]`). The N ensemble reviewers keep their identical, broad full-PR scope but each takes a distinct stance assigned round-robin, decorrelating the ensemble so it shares fewer blind spots. `dienstweg update` migrates existing repos to schema v4, adding the default stances. The `spec-conformance` stance name is load-bearing: the reviewer assigned it also checks the diff against the issue's `## Plan` and `## Acceptance Criteria` (the start-task templates key that check off the name; drop the stance and no reviewer performs it).
+- The dienstweg repo self-adopted the feature (ran `dienstweg update` on its own config + generated files) and documented `review.stances` in the README, WORKFLOW.md, and the AGENTS.md block.
+
 ## v0.3.1 (2026-07-06)
 
 First public release. No functional changes to the workflow or the guard.
