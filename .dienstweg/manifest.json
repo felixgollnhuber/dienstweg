@@ -3,9 +3,9 @@
   "files": {
     ".claude/commands/create-issue.md": "8f3b32e1e4258ce09bf107be7e083b00bcb1895b981c86dfc3a2727eb3be5cdc",
     ".claude/commands/start-task.md": "aff921b544edfa05370cfc8207b0b1808a5518c2e59222b2d34912bd7463d24d",
-    ".claude/hooks/branch-guard.mjs": "7cd4ca91aad7197e6c100b8c74758d60b596fd9ee74ec2548d98ac20554d3fb5",
+    ".claude/hooks/branch-guard.mjs": "3b4aa7fff86c078a0b70b6fb851748489977c2184ee469a795286dcda9b4bdcc",
     ".agents/skills/create-issue/SKILL.md": "4bd11aa8bbf0693fac9235fa75661869ecd9221b8698a60bb988784aed276960",
     ".agents/skills/start-task/SKILL.md": "96814100734f654b3372c826a907bb3093ae7990daef6efc6c0269fd62ac83d9",
-    ".codex/hooks/branch-guard.mjs": "7cd4ca91aad7197e6c100b8c74758d60b596fd9ee74ec2548d98ac20554d3fb5"
+    ".codex/hooks/branch-guard.mjs": "3b4aa7fff86c078a0b70b6fb851748489977c2184ee469a795286dcda9b4bdcc"
   }
 }
