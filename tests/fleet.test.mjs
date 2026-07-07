@@ -9,6 +9,7 @@ import {
   realpathSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { tmp, tmpRepo, runCli, fleetFile, cleanupAll } from "./helpers.mjs";
 import {
   fleetPath,
@@ -17,7 +18,7 @@ import {
   writeFleet,
   registerRepo,
   isLiveRepo,
-} from "../src/fleet.mjs";
+} from "../src/registry.mjs";
 
 after(cleanupAll);
 
@@ -47,6 +48,12 @@ const readRegistry = (home) => JSON.parse(readFileSync(fleetFile(home), "utf8"))
 test("fleetPath honors XDG_CONFIG_HOME", () => {
   const home = useTempConfigHome();
   assert.equal(fleetPath(), join(home, "dienstweg", "fleet.json"));
+});
+
+test("fleetPath ignores a non-absolute XDG_CONFIG_HOME (XDG spec)", () => {
+  process.env.XDG_CONFIG_HOME = "relative/config";
+  // Falls back to ~/.config rather than resolving the relative value per cwd.
+  assert.equal(fleetPath(), join(homedir(), ".config", "dienstweg", "fleet.json"));
 });
 
 test("loadFleet tolerates a missing registry", () => {

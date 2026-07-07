@@ -40,7 +40,10 @@ export function computeCheck(root) {
   try {
     config = loadConfig(root);
   } catch (e) {
-    // Invalid JSON: mirror the original single-FAIL output via the generic path.
+    // Invalid JSON: mirror the original single-FAIL output via the generic
+    // printer. This reproduces the original byte-for-byte ONLY because `infos`
+    // is still empty here - do not push an info before this guard, or the
+    // invalid-JSON path would start emitting INFO lines it never printed.
     return { ...base, ok: false, problems: [`config: ${e.message}`], config: null, dienstwegVersion: null };
   }
   if (!config) {
@@ -165,8 +168,9 @@ export function computeCheck(root) {
 
 // Machine-readable shape for `check --json` (and any external aggregator). The
 // human `check` output is the stable contract for people; this is the stable
-// contract for tools - both derive from computeCheck.
-export function checkJson(root, result = computeCheck(root)) {
+// contract for tools - both derive from computeCheck. Takes an already-computed
+// result so callers never scan twice.
+export function checkJson(root, result) {
   return {
     root,
     ok: result.ok,

@@ -23,7 +23,7 @@ import {
   buildOnboardingPrompt,
   writeOnboardingPrompt,
 } from "./onboarding.mjs";
-import { registerRepo } from "./fleet.mjs";
+import { registerRepo } from "./registry.mjs";
 
 // Ensures .gitignore ignores the throwaway onboarding prompt (it is a
 // per-machine artifact, not a committed file).

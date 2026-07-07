@@ -1,92 +1,23 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, resolve, dirname } from "node:path";
-import { homedir } from "node:os";
-import { CONFIG_FILENAME } from "./config.mjs";
 import { computeCheck } from "./check.mjs";
 import { runUpdate } from "./update.mjs";
+import { readFleet } from "./registry.mjs";
 
-const FLEET_VERSION = 1;
-
-// The user-level registry of repos that use dienstweg. Honors XDG_CONFIG_HOME
-// (falling back to ~/.config) so tests can isolate it to a temp dir and it
-// respects a customized config home. Resolved per call, never cached, so an
-// env change between calls (tests, subprocesses) takes effect.
-export function fleetPath() {
-  const configHome = process.env.XDG_CONFIG_HOME && process.env.XDG_CONFIG_HOME.trim()
-    ? process.env.XDG_CONFIG_HOME
-    : join(homedir(), ".config");
-  return join(configHome, "dienstweg", "fleet.json");
-}
-
-// Reads the registry without pruning. Tolerates a missing or corrupt file the
-// same way the manifest loader does - a broken registry must never dead-end the
-// commands, so it degrades to an empty fleet. Always returns a normalized
-// { version, repos: string[] } with a de-duplicated, string-only repo list.
-export function loadFleet() {
-  const p = fleetPath();
-  if (!existsSync(p)) return { version: FLEET_VERSION, repos: [] };
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync(p, "utf8"));
-  } catch {
-    return { version: FLEET_VERSION, repos: [] };
-  }
-  const repos = Array.isArray(parsed?.repos)
-    ? [...new Set(parsed.repos.filter((r) => typeof r === "string" && r.trim() !== ""))]
-    : [];
-  return { version: FLEET_VERSION, repos };
-}
-
-export function writeFleet(repos) {
-  const p = fleetPath();
-  mkdirSync(dirname(p), { recursive: true });
-  const sorted = [...new Set(repos)].sort();
-  writeFileSync(p, JSON.stringify({ version: FLEET_VERSION, repos: sorted }, null, 2) + "\n");
-  return sorted;
-}
-
-// A registry entry is live only while the directory still exists AND still
-// carries a dienstweg config - a repo whose config was removed is no longer a
-// dienstweg repo and is treated as dead.
-export function isLiveRepo(repoPath) {
-  return existsSync(repoPath) && existsSync(join(repoPath, CONFIG_FILENAME));
-}
-
-// Reads the registry and prunes dead paths on read, persisting the pruned set
-// only when something actually changed (self-healing without needless writes).
-// Returns the live repo paths.
-export function readFleet() {
-  const { repos } = loadFleet();
-  const live = repos.filter(isLiveRepo);
-  if (live.length !== repos.length) writeFleet(live);
-  return live;
-}
-
-// Records a repo in the registry. Best-effort: init/update call this after a
-// successful setup and must never fail because the user-level registry is not
-// writable, so every error is swallowed. Returns true if the repo is now
-// registered (added or already present), false if the write failed.
-export function registerRepo(root) {
-  const abs = resolve(root);
-  try {
-    const { repos } = loadFleet();
-    if (repos.includes(abs)) return true;
-    writeFleet([...repos, abs]);
-    return true;
-  } catch {
-    return false;
-  }
-}
+// The fleet command surface: runs the existing single-repo commands across every
+// registered repo and aggregates the results. The registry itself lives in
+// registry.mjs (imported by init/update too); this module depends on it and on
+// the single-repo runners, keeping the imports one-directional.
 
 function pluralConflicts(n) {
   return `${n} conflict${n === 1 ? "" : "s"}`;
 }
 
+const EMPTY_MSG = "fleet: no repos registered - run `dienstweg init` or `dienstweg update` in a repo.";
+
 // `fleet status`: one line per repo - stamped dienstwegVersion vs CLI version,
 // check result (OK/FAIL), conflict count. Purely a report, so it always exits 0.
 function fleetStatus(repos) {
   if (repos.length === 0) {
-    console.log("fleet: no repos registered - run `dienstweg init` or `dienstweg update` in a repo.");
+    console.log(EMPTY_MSG);
     return 0;
   }
   const rows = repos.map((repo) => {
@@ -111,7 +42,7 @@ function fleetStatus(repos) {
 // aggregate output is actionable, not just a tally.
 function fleetCheck(repos) {
   if (repos.length === 0) {
-    console.log("fleet: no repos registered - run `dienstweg init` or `dienstweg update` in a repo.");
+    console.log(EMPTY_MSG);
     return 0;
   }
   let failed = 0;
@@ -134,7 +65,7 @@ function fleetCheck(repos) {
 // counts as a failure. Non-zero exit if any repo fails.
 function fleetUpdate(repos) {
   if (repos.length === 0) {
-    console.log("fleet: no repos registered - run `dienstweg init` or `dienstweg update` in a repo.");
+    console.log(EMPTY_MSG);
     return 0;
   }
   let failed = 0;
@@ -159,22 +90,19 @@ const USAGE = "usage: dienstweg fleet <status|check|update>";
 // the cwd) but kept for signature symmetry with the other run* entry points.
 export function runFleet(_root, args) {
   const [sub, ...rest] = args;
+  const known = { status: fleetStatus, check: fleetCheck, update: fleetUpdate };
+  if (sub === undefined) {
+    console.error(`fleet: missing subcommand.\n${USAGE}`);
+    return 1;
+  }
+  const handler = known[sub];
+  if (!handler) {
+    console.error(`fleet: unknown subcommand "${sub}".\n${USAGE}`);
+    return 1;
+  }
   if (rest.length) {
     console.error(`\`dienstweg fleet ${sub}\` takes no arguments (got: ${rest.join(" ")})`);
     return 1;
   }
-  switch (sub) {
-    case "status":
-      return fleetStatus(readFleet());
-    case "check":
-      return fleetCheck(readFleet());
-    case "update":
-      return fleetUpdate(readFleet());
-    case undefined:
-      console.error(`fleet: missing subcommand.\n${USAGE}`);
-      return 1;
-    default:
-      console.error(`fleet: unknown subcommand "${sub}".\n${USAGE}`);
-      return 1;
-  }
+  return handler(readFleet());
 }

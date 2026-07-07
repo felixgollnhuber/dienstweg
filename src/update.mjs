@@ -17,7 +17,7 @@ import {
   orphanedHarnessArtifacts,
 } from "./generate.mjs";
 import { migrations } from "../migrations/index.mjs";
-import { registerRepo } from "./fleet.mjs";
+import { registerRepo } from "./registry.mjs";
 
 export function runUpdate(root, flags) {
   const config = loadConfig(root);
