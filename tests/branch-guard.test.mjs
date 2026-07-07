@@ -35,6 +35,7 @@ const BLOCK = [
   // Hard force on a non-protected branch must recommend --force-with-lease (DIE-6).
   "git push --force origin tasks/foo",
   "git push -f origin tasks/foo",
+  "git push -fu origin tasks/foo",
   "git push origin +tasks/foo",
   "git push --force origin HEAD:tasks/foo",
   "git push --force",
@@ -114,6 +115,16 @@ for (const via of ["claude", "codex"]) {
     for (const cmd of ALLOW) {
       const { status } = runGuard(cmd, dir, via);
       assert.equal(status, 0, `should ALLOW: ${cmd}`);
+    }
+  });
+
+  // AC #1: a hard force on a non-protected branch must recommend --force-with-lease,
+  // not just block. Guards the recommendation message against a future regression.
+  test(`[${via}] non-protected hard force recommends --force-with-lease`, () => {
+    for (const cmd of ["git push --force origin tasks/foo", "git push --force"]) {
+      const { status, stderr } = runGuard(cmd, dir, via);
+      assert.equal(status, 2, `should BLOCK: ${cmd}`);
+      assert.match(stderr, /--force-with-lease/, `should recommend lease for: ${cmd}`);
     }
   });
 }
