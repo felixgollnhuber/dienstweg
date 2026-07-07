@@ -174,6 +174,10 @@ const protectedSet = new Set(
 const prepared = normalizeQuotes(stripHeredocs(command));
 
 for (const seg of segments(prepared)) {
+  // A short option cluster like `-fd` (single dash, not a `--long` flag); lets the
+  // rules below catch bundled short flags (`-fu`, `-xdf`, `-Df`), not just the lone form.
+  const isShort = (a) => a.startsWith("-") && !a.startsWith("--");
+
   // Rule 1/2: gh pr create must target the configured base branch explicitly.
   const createArgs = afterGhPr(seg, "create");
   if (createArgs && !createArgs.includes("--help") && !createArgs.includes("-h")) {
@@ -210,7 +214,9 @@ for (const seg of segments(prepared)) {
   // Rule 4/5: pushes to protected branches (force = worse, but both blocked).
   const pushArgs = afterGitSub(seg, "push");
   if (pushArgs) {
-    const hardForce = pushArgs.some((a) => a === "--force" || a === "-f");
+    // `-f`, and bundled short clusters like `-fu` (force + set-upstream) or `-fq`;
+    // `-f` is the only push short flag spelled with an `f`, so a cluster with one forces.
+    const hardForce = pushArgs.some((a) => a === "--force" || (isShort(a) && a.includes("f")));
     const withLease = pushArgs.some((a) => a === "--force-with-lease" || a.startsWith("--force-with-lease="));
     const isDelete = pushArgs.some((a) => a === "--delete" || a === "-d");
     const nonFlags = pushArgs.filter((a) => !a.startsWith("-"));
@@ -225,12 +231,29 @@ for (const seg of segments(prepared)) {
     const plusForce = explicitRefspecs.some((a) => a.startsWith("+"));
     const force = hardForce || withLease || plusForce;
     const forceLabel = hardForce || plusForce ? "--force" : "--force-with-lease";
+    // A hard force (--force/-f, or a +refspec that force-updates just that ref)
+    // can silently overwrite commits the pusher never fetched; --force-with-lease
+    // refuses when the remote moved and is the required form on any shared branch.
+    const leaseHint =
+      "Use --force-with-lease instead - it refuses when the remote moved. See the dienstweg block in AGENTS.md.";
     for (const c of [...explicitRefspecs, ...branchRefspecs]) {
       const dst = refspecDest(c);
-      if (!protectedSet.has(dst)) continue;
+      const hardForceHere = hardForce || c.startsWith("+");
+      if (!protectedSet.has(dst)) {
+        // Non-protected branch: steer a hard force to the leased form; a leased
+        // force (--force-with-lease) or a plain push stays allowed.
+        if (hardForceHere) block(`git push --force to '${dst}' can overwrite commits you have not fetched. ${leaseHint}`);
+        continue;
+      }
       if (isDelete) block(`Deleting the protected branch '${dst}' on the remote is forbidden.`);
       if (force) block(`git push ${forceLabel} to '${dst}' is destructive on a shared branch and requires explicit user authorization.`);
       block(`Direct push to '${dst}' is forbidden. Integration happens via PR (base ${prBase}).`);
+    }
+    // A bare hard force with no branch refspec (destination unknown): --force is
+    // never preferable to --force-with-lease, so steer to the safe form. A bare
+    // --force-with-lease has hardForce === false and is left alone.
+    if (hardForce && explicitRefspecs.length === 0 && branchRefspecs.length === 0) {
+      block(`git push --force can overwrite commits you have not fetched. ${leaseHint}`);
     }
   }
 
@@ -243,9 +266,6 @@ for (const seg of segments(prepared)) {
   // Rules 7-12 catch destructive git operations that throw away uncommitted or
   // in-progress work with no undo. These are honest-mistake guards, not a
   // sandbox: a determined bypass is always possible.
-
-  // A short option cluster like `-fd` (single dash, not a `--long` flag).
-  const isShort = (a) => a.startsWith("-") && !a.startsWith("--");
 
   // Rule 7: git reset --hard discards every uncommitted change with no undo.
   const resetArgs = afterGitSub(seg, "reset");
