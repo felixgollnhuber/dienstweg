@@ -23,6 +23,7 @@ import {
   buildOnboardingPrompt,
   writeOnboardingPrompt,
 } from "./onboarding.mjs";
+import { registerRepo } from "./registry.mjs";
 
 // Ensures .gitignore ignores the throwaway onboarding prompt (it is a
 // per-machine artifact, not a committed file).
@@ -67,6 +68,9 @@ export async function runInit(root, flags) {
     throw new Error(`invalid answers, cannot initialize:\n  - ${problems.join("\n  - ")}`);
   }
   writeConfig(root, config);
+  // Record this repo in the user-level fleet registry (best-effort - a
+  // non-writable registry must never fail init).
+  registerRepo(root);
 
   const { manifest, skipped } = writeGeneratedFiles(root, null, "skip", config.harnesses);
   writeManifest(root, manifest);

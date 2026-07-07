@@ -19,23 +19,35 @@ import {
   agentsMarkerState,
 } from "./generate.mjs";
 
-// The doctor must never crash on the broken states it exists to diagnose: every
-// load is guarded and turned into a FAIL line instead of an exception.
-export function runCheck(root) {
+const NO_CONFIG_MSG = "no dienstweg.config.json found - run `dienstweg init` first.";
+
+// Pure inspection: gathers every diagnostic without printing, so the same result
+// feeds the human formatter, `check --json`, and the fleet aggregation. Never
+// throws on the broken states it exists to diagnose - each load is guarded and
+// turned into a problem string instead.
+//
+// Returns { ok, problems, infos, conflicts, config, dienstwegVersion, cliVersion,
+// noConfig? }. `conflicts` is the list of generated-file conflict targets
+// (hand-edited / unmanaged / missing generated file); its length is the count
+// surfaced by `fleet status`.
+export function computeCheck(root) {
   const problems = [];
   const infos = [];
+  const conflicts = [];
+  const base = { infos, conflicts, cliVersion: CLI_VERSION, noConfig: false };
 
   let config;
   try {
     config = loadConfig(root);
   } catch (e) {
-    console.error(`FAIL  config: ${e.message}`);
-    console.error("check: 1 problem(s) found.");
-    return 1;
+    // Invalid JSON: mirror the original single-FAIL output via the generic
+    // printer. This reproduces the original byte-for-byte ONLY because `infos`
+    // is still empty here - do not push an info before this guard, or the
+    // invalid-JSON path would start emitting INFO lines it never printed.
+    return { ...base, ok: false, problems: [`config: ${e.message}`], config: null, dienstwegVersion: null };
   }
   if (!config) {
-    console.error("check: no dienstweg.config.json found - run `dienstweg init` first.");
-    return 1;
+    return { ...base, ok: false, noConfig: true, problems: [NO_CONFIG_MSG], config: null, dienstwegVersion: null };
   }
 
   problems.push(...validateConfig(config).map((p) => `config: ${p}`));
@@ -77,13 +89,16 @@ export function runCheck(root) {
     for (const [target, hash] of Object.entries(files)) {
       const p = join(root, target);
       if (!existsSync(p)) {
+        conflicts.push(target);
         problems.push(`generated file missing: ${target}`);
       } else if (sha256(readFileSync(p, "utf8")) !== hash) {
+        conflicts.push(target);
         problems.push(`generated file was hand-edited: ${target} - generated files are tool-owned; move customizations to ${CONFIG_FILENAME} or dienstweg.local.md, then run \`dienstweg update --force\`.`);
       }
     }
     for (const spec of generatedFiles(activeHarnesses)) {
       if (!files[spec.target]) {
+        conflicts.push(spec.target);
         problems.push(`unmanaged: ${spec.target} is not tracked by dienstweg (a pre-existing file was skipped during init/update) - adopt the dienstweg version via \`dienstweg update --force\` or move the custom content to dienstweg.local.md.`);
       }
     }
@@ -142,13 +157,54 @@ export function runCheck(root) {
     }
   }
 
-  for (const info of infos) console.log(`INFO  ${info}`);
-  if (problems.length === 0) {
-    console.log(`check: OK (dienstweg v${config.dienstwegVersion}, project "${config.project}", prefix ${config.tracker.issuePrefix}, base ${config.git.baseBranch})`);
+  return {
+    ...base,
+    ok: problems.length === 0,
+    problems,
+    config,
+    dienstwegVersion: config.dienstwegVersion ?? null,
+  };
+}
+
+// Machine-readable shape for `check --json` (and any external aggregator). The
+// human `check` output is the stable contract for people; this is the stable
+// contract for tools - both derive from computeCheck. Takes an already-computed
+// result so callers never scan twice.
+export function checkJson(root, result) {
+  return {
+    root,
+    ok: result.ok,
+    dienstwegVersion: result.dienstwegVersion,
+    cliVersion: result.cliVersion,
+    conflicts: result.conflicts.length,
+    problems: result.problems,
+    infos: result.infos,
+  };
+}
+
+// The doctor: computes the diagnosis, then prints it. `opts.json` swaps the
+// human report for the machine-readable one; the exit code is identical.
+export function runCheck(root, opts = {}) {
+  const result = computeCheck(root);
+
+  if (opts.json) {
+    console.log(JSON.stringify(checkJson(root, result), null, 2));
+    return result.ok ? 0 : 1;
+  }
+
+  if (result.noConfig) {
+    console.error(`check: ${NO_CONFIG_MSG}`);
+    return 1;
+  }
+
+  for (const info of result.infos) console.log(`INFO  ${info}`);
+  if (result.ok) {
+    const c = result.config;
+    console.log(`check: OK (dienstweg v${c.dienstwegVersion}, project "${c.project}", prefix ${c.tracker.issuePrefix}, base ${c.git.baseBranch})`);
     return 0;
   }
-  for (const p of problems) console.error(`FAIL  ${p}`);
-  console.error(`check: ${problems.length} problem(s) found.`);
+  for (const p of result.problems) console.error(`FAIL  ${p}`);
+  console.error(`check: ${result.problems.length} problem(s) found.`);
   return 1;
 }
 

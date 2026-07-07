@@ -17,6 +17,7 @@ import {
   orphanedHarnessArtifacts,
 } from "./generate.mjs";
 import { migrations } from "../migrations/index.mjs";
+import { registerRepo } from "./registry.mjs";
 
 export function runUpdate(root, flags) {
   const config = loadConfig(root);
@@ -81,6 +82,8 @@ export function runUpdate(root, flags) {
   // skipped, the repo is not fully on the new version yet.
   if (skipped.length === 0) config.dienstwegVersion = CLI_VERSION;
   writeConfig(root, config);
+  // Keep the fleet registry current (best-effort - never fail update over it).
+  registerRepo(root);
 
   const toLabel = skipped.length === 0 ? `v${CLI_VERSION}` : `v${fromVersion} (incomplete)`;
   console.log(`dienstweg update: v${fromVersion} -> ${toLabel}`);

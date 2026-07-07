@@ -2,6 +2,7 @@ import { CLI_VERSION } from "./config.mjs";
 import { runInit } from "./init.mjs";
 import { runUpdate } from "./update.mjs";
 import { runCheck } from "./check.mjs";
+import { runFleet } from "./fleet.mjs";
 
 const HELP = `dienstweg v${CLI_VERSION} - config-driven task workflow for agent-assisted development
 
@@ -11,8 +12,14 @@ Commands:
   init      Set up dienstweg in the current repo (interactive interview).
   update    Regenerate tool-owned files, run config migrations, bump version stamp.
   check     Verify the setup (config, generated files, hook wiring, AGENTS block).
+  fleet     Run status/check/update across every repo dienstweg manages.
   version   Print the CLI version.
   help      Show this help.
+
+fleet subcommands (operate on the user-level registry ~/.config/dienstweg/fleet.json):
+  fleet status         One line per repo: stamped version vs CLI, check result, conflicts.
+  fleet check          Run \`check\` across all repos; non-zero exit if any fails.
+  fleet update         Run \`update\` across all repos; non-zero exit if any fails.
 
 init flags (each skips the corresponding question):
   --yes                 Non-interactive: use defaults for everything not passed as a flag.
@@ -32,6 +39,9 @@ init flags (each skips the corresponding question):
 
 update flags:
   --force               Overwrite hand-edited generated files.
+
+check flags:
+  --json                Emit the check result as machine-readable JSON.
 
 Run from the target repo's root. Docs: https://github.com/felixgollnhuber/dienstweg (WORKFLOW.md).`;
 
@@ -80,10 +90,6 @@ function parseFlags(args, allowed) {
   return flags;
 }
 
-function rejectArgs(command, rest) {
-  if (rest.length) throw new Error(`\`dienstweg ${command}\` takes no arguments (got: ${rest.join(" ")})`);
-}
-
 export async function run(argv) {
   const [command, ...rest] = argv;
   const root = process.cwd();
@@ -95,9 +101,17 @@ export async function run(argv) {
     case "update":
       process.exitCode = runUpdate(root, parseFlags(rest, UPDATE_FLAGS));
       break;
-    case "check":
-      rejectArgs("check", rest);
-      process.exitCode = runCheck(root);
+    case "check": {
+      const json = rest.includes("--json");
+      const unknown = rest.filter((a) => a !== "--json");
+      if (unknown.length) {
+        throw new Error(`\`dienstweg check\` only supports --json (got: ${unknown.join(" ")})`);
+      }
+      process.exitCode = runCheck(root, { json });
+      break;
+    }
+    case "fleet":
+      process.exitCode = runFleet(root, rest);
       break;
     case "version":
       console.log(CLI_VERSION);
