@@ -17,7 +17,11 @@ export const KNOWN_HARNESSES = ["claude", "codex"];
 // Default reviewer stances for the ensemble review. Each reviewer keeps the
 // same broad, full-PR scope but takes a distinct stance so the ensemble
 // decorrelates (fewer shared blind spots). Free-form strings - projects may
-// tune these; round-robin assignment covers any ensembleSize.
+// tune these; round-robin assignment covers any ensembleSize. Note: the
+// `spec-conformance` stance name is load-bearing - the start-task templates key
+// the "receive the issue reference + check the diff against ## Plan / ##
+// Acceptance Criteria" behavior off it. Renaming or dropping it removes that
+// check (the templates phrase it conditionally, so this degrades gracefully).
 export const DEFAULT_STANCES = ["adversarial", "spec-conformance", "maintainer"];
 
 const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");

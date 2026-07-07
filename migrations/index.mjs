@@ -1,7 +1,9 @@
 // Config schema migrations. Each entry upgrades a dienstweg.config.json object
 // in place from schemaVersion (toSchemaVersion - 1) to toSchemaVersion.
 // `dienstweg update` applies pending migrations in ascending order before
-// regenerating files. Keep migrations idempotent and side-effect free.
+// regenerating files. Keep migrations idempotent and side-effect free. Inline
+// literal defaults here - never import evolving constants (e.g. DEFAULT_STANCES)
+// so a historical migration always yields its own schema's shape.
 //
 // Example:
 // {

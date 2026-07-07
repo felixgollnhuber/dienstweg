@@ -73,6 +73,9 @@ test("renderAgentsBlock renders reviewer stances in the review paragraph", () =>
   assert.match(out, /distinct stance/);
   assert.match(out, /adversarial, spec-conformance, maintainer/);
   assert.match(out, /round-robin/);
+  // The spec-conformance Plan/AC clause is conditional on the stance being
+  // configured, so a custom stance set never leaves a dangling reviewer claim.
+  assert.match(out, /When a `spec-conformance` stance is configured/);
 });
 
 test("renderAgentsBlock reflects custom stances from config", () => {
