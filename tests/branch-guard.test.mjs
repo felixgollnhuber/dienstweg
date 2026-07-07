@@ -80,6 +80,10 @@ const BLOCK = [
   "git add CERT.PEM",
   "git add .ENV",
   "git add secrets/ID_RSA",
+  // Pathspec staging magic still resolves to a real secret path (DIE-7).
+  "git add :/.env",
+  "git add :(top).env",
+  "git add :(top,literal).env",
 ];
 
 // Commands that MUST be allowed (exit 0) - legitimate look-alikes.
@@ -123,10 +127,12 @@ const ALLOW = [
   "git add -p",
   "git add README.md",
   "git add environment.ts",
-  // Public key is safe; exclude-pathspec magic is not a real path (DIE-7).
+  // Public key is safe; exclude-pathspec magic stages nothing (DIE-7).
   "git add id_rsa.pub",
   "git add secrets/id_rsa.pub",
   "git add . :!config.pem",
+  "git add . :^config.pem",
+  "git add . :(exclude)secret.pem",
 ];
 
 const dir = project();
@@ -201,4 +207,13 @@ test("secret denylist: a non-string config entry fails safe, not open", () => {
   assert.equal(runGuard("git add .env", bad, "codex").status, 2, "default still blocks");
   assert.equal(runGuard("git add app.key", bad, "codex").status, 2, "valid custom pattern still blocks");
   assert.equal(runGuard("git push --force origin main", bad, "codex").status, 2, "unrelated rules still active");
+});
+
+// A replace list that filters to empty is a typo -> fall back to defaults; an
+// explicitly empty list is honored as an opt-out.
+test("secret denylist: replace with an all-typo list falls back to defaults", () => {
+  const typo = guardProject({ secretDenylist: [123, null], secretDenylistReplace: true });
+  assert.equal(runGuard("git add .env", typo, "codex").status, 2, "typo replace falls back to defaults");
+  const optOut = guardProject({ secretDenylist: [], secretDenylistReplace: true });
+  assert.equal(runGuard("git add .env", optOut, "codex").status, 0, "explicit empty replace opts out");
 });

@@ -206,9 +206,19 @@ const guard = config.guard || {};
 // a number or null) would make globToRegExp throw at load time - and because
 // that runs outside any try/catch, it would abort the whole hook and fail OPEN
 // for every rule, not just this one.
-const guardDeny = Array.isArray(guard.secretDenylist) ? guard.secretDenylist.filter((s) => typeof s === "string") : [];
+const rawDeny = Array.isArray(guard.secretDenylist) ? guard.secretDenylist : [];
+const guardDeny = rawDeny.filter((s) => typeof s === "string");
 const guardAllow = Array.isArray(guard.secretAllowlist) ? guard.secretAllowlist.filter((s) => typeof s === "string") : [];
-const secretDeny = (guard.secretDenylistReplace ? guardDeny : [...DEFAULT_SECRET_DENYLIST, ...guardDeny]).map(globToRegExp);
+// `=== true` so a stringy `"false"` (truthy) cannot flip the mode by accident.
+// A replace list that was non-empty but lost every entry to the string filter
+// is a typo, not an intent to disable the guard - fall back to the defaults
+// rather than silently compiling an empty (allow-everything) denylist. An
+// explicitly empty `secretDenylist: []` is honored as an opt-out.
+const denyPatterns =
+  guard.secretDenylistReplace === true
+    ? (rawDeny.length > 0 && guardDeny.length === 0 ? DEFAULT_SECRET_DENYLIST : guardDeny)
+    : [...DEFAULT_SECRET_DENYLIST, ...guardDeny];
+const secretDeny = denyPatterns.map(globToRegExp);
 const secretAllow = [...DEFAULT_SECRET_ALLOWLIST, ...guardAllow].map(globToRegExp);
 
 const prepared = normalizeQuotes(stripHeredocs(command));
@@ -385,7 +395,10 @@ for (const seg of segments(prepared)) {
   // configurable denylist; the allowlist (`.env.example` etc.) always wins.
   // `-f`/`--force` is not blocked on its own - only a denylist hit is, forced or
   // not. Whole-tree adds (`git add .` / `-A` / `--all`) carry no explicit secret
-  // token and stay allowed (the hook cannot inspect the tree contents).
+  // token and stay allowed (the hook cannot inspect the tree contents). Git
+  // pathspec magic is resolved: exclude magic (`:!`, `:^`, `:(exclude)`) stages
+  // nothing and is skipped; other magic (`:/`, `:(top)`, ...) still resolves to
+  // a real path, so its prefix is stripped and the basename underneath checked.
   const addArgs = afterGitSub(seg, "add");
   if (addArgs) {
     let pathsOnly = false;
@@ -395,10 +408,19 @@ for (const seg of segments(prepared)) {
         continue;
       }
       if (!pathsOnly && a.startsWith("-")) continue;
-      // Pathspec magic (`:!*.pem`, `:(exclude)...`) is not a real path - skip it
-      // so an exclude pathspec is not misread as staging the file it excludes.
-      if (a.startsWith(":")) continue;
-      const base = basename(a);
+      let tok = a;
+      if (tok.startsWith(":")) {
+        const longMagic = tok.match(/^:\([^)]*\)/);
+        if (longMagic) {
+          if (longMagic[0].includes("exclude")) continue;
+          tok = tok.slice(longMagic[0].length);
+        } else if (tok.startsWith(":!") || tok.startsWith(":^")) {
+          continue;
+        } else {
+          tok = tok.replace(/^:+/, "");
+        }
+      }
+      const base = basename(tok);
       if (secretDeny.some((re) => re.test(base)) && !secretAllow.some((re) => re.test(base))) {
         block(`git add of '${a}' stages a file matching the secret denylist and requires explicit user authorization. If this file is genuinely safe, add its name to guard.secretAllowlist in dienstweg.config.json.`);
       }
