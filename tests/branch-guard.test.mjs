@@ -32,6 +32,14 @@ const BLOCK = [
   "git commit -nm wip",
   "gh pr create --base develop --title x",
   "gh pr create --title x",
+  // Hard force on a non-protected branch must recommend --force-with-lease (DIE-6).
+  "git push --force origin tasks/foo",
+  "git push -f origin tasks/foo",
+  "git push origin +tasks/foo",
+  "git push --force origin HEAD:tasks/foo",
+  "git push --force",
+  "git push -f",
+  "git push --force origin",
   // Destructive no-undo git operations (DIE-5).
   "git reset --hard",
   "git reset --hard HEAD~2",
@@ -62,6 +70,11 @@ const BLOCK = [
 const ALLOW = [
   "git push -u origin tasks/foo",
   "git push origin main-hotfix",
+  // --force-with-lease is the safe form and passes on non-protected branches (DIE-6).
+  "git push --force-with-lease origin tasks/foo",
+  "git push --force-with-lease=tasks/foo origin tasks/foo",
+  "git push --force-with-lease",
+  "git push origin tasks/foo",
   "gh pr create --base main --title x",
   'git commit -m "let us talk about main today"',
   "echo main",

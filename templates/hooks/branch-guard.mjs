@@ -224,12 +224,29 @@ for (const seg of segments(prepared)) {
     const plusForce = explicitRefspecs.some((a) => a.startsWith("+"));
     const force = hardForce || withLease || plusForce;
     const forceLabel = hardForce || plusForce ? "--force" : "--force-with-lease";
+    // A hard force (--force/-f, or a +refspec that force-updates just that ref)
+    // can silently overwrite commits the pusher never fetched; --force-with-lease
+    // refuses when the remote moved and is the required form on any shared branch.
+    const leaseHint =
+      "Use --force-with-lease instead - it refuses when the remote moved. See the dienstweg block in AGENTS.md.";
     for (const c of [...explicitRefspecs, ...branchRefspecs]) {
       const dst = refspecDest(c);
-      if (!protectedSet.has(dst)) continue;
+      const hardForceHere = hardForce || c.startsWith("+");
+      if (!protectedSet.has(dst)) {
+        // Non-protected branch: steer a hard force to the leased form; a leased
+        // force (--force-with-lease) or a plain push stays allowed.
+        if (hardForceHere) block(`git push --force to '${dst}' can overwrite commits you have not fetched. ${leaseHint}`);
+        continue;
+      }
       if (isDelete) block(`Deleting the protected branch '${dst}' on the remote is forbidden.`);
       if (force) block(`git push ${forceLabel} to '${dst}' is destructive on a shared branch and requires explicit user authorization.`);
       block(`Direct push to '${dst}' is forbidden. Integration happens via PR (base ${prBase}).`);
+    }
+    // A bare hard force with no branch refspec (destination unknown): --force is
+    // never preferable to --force-with-lease, so steer to the safe form. A bare
+    // --force-with-lease has hardForce === false and is left alone.
+    if (hardForce && explicitRefspecs.length === 0 && branchRefspecs.length === 0) {
+      block(`git push --force can overwrite commits you have not fetched. ${leaseHint}`);
     }
   }
 
