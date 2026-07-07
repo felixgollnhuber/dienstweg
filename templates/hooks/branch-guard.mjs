@@ -141,6 +141,27 @@ function refspecDest(refspec) {
   return dst.replace(/^refs\/heads\//, "");
 }
 
+// Default denylist of path patterns whose staging is almost always a mistake -
+// a real secret riding into a commit, and on a public repo into history.
+// Glob-ish: `*` matches any run of characters, everything else is literal.
+// Matched against the BASENAME of each path, so `config/.env` is caught too.
+const DEFAULT_SECRET_DENYLIST = [".env", ".env.*", "*.pem", "id_rsa*", "credentials*"];
+// Safe look-alikes that stay stageable even though they match the denylist
+// (`.env.example` matches `.env.*`). The allowlist always wins over the denylist.
+const DEFAULT_SECRET_ALLOWLIST = [".env.example", ".env.sample", ".env.template", ".env.dist"];
+
+// Compile a glob-ish pattern (only `*` is special) to an anchored RegExp.
+function globToRegExp(glob) {
+  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
+// Basename of a path token: last non-empty segment, trailing slashes stripped.
+function basename(p) {
+  const parts = p.replace(/\/+$/, "").split("/");
+  return parts[parts.length - 1] || p;
+}
+
 const raw = readStdin();
 if (!raw.trim()) process.exit(0);
 
@@ -169,6 +190,15 @@ const prBase = config.git.baseBranch;
 const protectedSet = new Set(
   config.git.protectedBranches?.length ? config.git.protectedBranches : [prBase],
 );
+
+// Secret-file denylist (Rule 13). Optional `guard` config block tunes it:
+// `secretDenylist` extends the defaults, or replaces them when
+// `secretDenylistReplace` is true; `secretAllowlist` extends the exceptions.
+const guard = config.guard || {};
+const guardDeny = Array.isArray(guard.secretDenylist) ? guard.secretDenylist : [];
+const guardAllow = Array.isArray(guard.secretAllowlist) ? guard.secretAllowlist : [];
+const secretDeny = (guard.secretDenylistReplace ? guardDeny : [...DEFAULT_SECRET_DENYLIST, ...guardDeny]).map(globToRegExp);
+const secretAllow = [...DEFAULT_SECRET_ALLOWLIST, ...guardAllow].map(globToRegExp);
 
 const prepared = normalizeQuotes(stripHeredocs(command));
 
@@ -336,6 +366,29 @@ for (const seg of segments(prepared)) {
   const wtArgs = afterGitSub(seg, "worktree");
   if (wtArgs && wtArgs[0] === "remove" && wtArgs.some((a) => a === "--force" || /^-f+$/.test(a))) {
     block(`git worktree remove --force deletes a worktree with uncommitted changes and requires explicit user authorization.`);
+  }
+
+  // Rule 13: git add of a secret file (`.env`, private keys, credential dumps)
+  // stages a secret that then rides into a commit - and on a public repo into
+  // history. Each explicit path token's basename is matched against the
+  // configurable denylist; the allowlist (`.env.example` etc.) always wins.
+  // `-f`/`--force` is not blocked on its own - only a denylist hit is, forced or
+  // not. Whole-tree adds (`git add .` / `-A` / `--all`) carry no explicit secret
+  // token and stay allowed (the hook cannot inspect the tree contents).
+  const addArgs = afterGitSub(seg, "add");
+  if (addArgs) {
+    let pathsOnly = false;
+    for (const a of addArgs) {
+      if (!pathsOnly && a === "--") {
+        pathsOnly = true;
+        continue;
+      }
+      if (!pathsOnly && a.startsWith("-")) continue;
+      const base = basename(a);
+      if (secretDeny.some((re) => re.test(base)) && !secretAllow.some((re) => re.test(base))) {
+        block(`git add of '${a}' stages a file matching the secret denylist and requires explicit user authorization. If this file is genuinely safe, add its name to guard.secretAllowlist in dienstweg.config.json.`);
+      }
+    }
   }
 }
 
