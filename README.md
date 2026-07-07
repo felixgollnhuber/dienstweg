@@ -129,6 +129,8 @@ branch and requires explicit user authorization.
 
 It catches the real forms agents actually emit: `git push -u origin main`, `HEAD:main`, `+main`, `:main`, `--delete main`, subshell `(git push origin main)`, `git -C dir push`, `git commit -n`, PRs against the wrong base — while staying quiet on the legitimate ones (`main-hotfix`, `--base=main`, the word "main" inside a commit message).
 
+It also blocks `git add` of a secret file — `.env`, `*.pem`, `id_rsa*`, `credentials*` — before it can ride into a commit, while leaving harmless look-alikes like `.env.example` alone. The denylist is tunable via an optional `guard` block in `dienstweg.config.json`: `secretDenylist` extends the defaults (or replaces them with `secretDenylistReplace: true`), and `secretAllowlist` adds exceptions.
+
 It is deliberately **a guardrail against honest mistakes, not a security sandbox.** A determined bypass through obfuscation is always possible, and that is fine — the goal is to stop the slip, not to contain a hostile actor. The docs say so everywhere they can.
 
 ## Command reference
