@@ -239,6 +239,85 @@ for (const seg of segments(prepared)) {
   if (mergeArgs && !mergeArgs.some((a) => a === "--squash" || a === "--merge" || a === "--rebase")) {
     process.stderr.write(`[${NAME}] WARN: gh pr merge without an explicit strategy. Convention is --squash --delete-branch. Continuing.\n`);
   }
+
+  // Rules 7-12 catch destructive git operations that throw away uncommitted or
+  // in-progress work with no undo. These are honest-mistake guards, not a
+  // sandbox: a determined bypass is always possible.
+
+  // A short option cluster like `-fd` (single dash, not a `--long` flag).
+  const isShort = (a) => a.startsWith("-") && !a.startsWith("--");
+
+  // Rule 7: git reset --hard discards every uncommitted change with no undo.
+  const resetArgs = afterGitSub(seg, "reset");
+  if (resetArgs && resetArgs.includes("--hard")) {
+    block(`git reset --hard discards all uncommitted changes with no undo and requires explicit user authorization.`);
+  }
+
+  // Rule 8: git clean -f permanently deletes untracked files (bundled short
+  // forms like -fd / -xdf included). A dry run (-n / --dry-run) deletes nothing.
+  const cleanArgs = afterGitSub(seg, "clean");
+  if (cleanArgs) {
+    const cleanForce = cleanArgs.some((a) => a === "--force" || (isShort(a) && a.includes("f")));
+    const cleanDryRun = cleanArgs.some((a) => a === "--dry-run" || (isShort(a) && a.includes("n")));
+    if (cleanForce && !cleanDryRun) {
+      block(`git clean -f permanently deletes untracked files with no undo and requires explicit user authorization.`);
+    }
+  }
+
+  // Rule 9: repo-wide working-tree discard throws away every uncommitted change.
+  // `git checkout .` / `git checkout -- .` and `git restore .` (worktree). A
+  // targeted path (`git checkout -- file`) or a staged-only restore
+  // (`git restore --staged .`, which only unstages and loses no work) stays fine.
+  // The current-directory pathspec, written `.` or `./` - both discard the whole
+  // (sub)tree; a named path like `./file` or `path/to/file` stays targeted.
+  const isCwdPathspec = (a) => a === "." || a === "./";
+  const coArgs = afterGitSub(seg, "checkout");
+  if (coArgs && coArgs.some(isCwdPathspec)) {
+    block(`Repo-wide 'git checkout .' discards all uncommitted working-tree changes with no undo and requires explicit user authorization.`);
+  }
+  const restoreArgs = afterGitSub(seg, "restore");
+  if (restoreArgs && restoreArgs.some(isCwdPathspec)) {
+    const staged = restoreArgs.some((a) => a === "--staged" || (isShort(a) && a.includes("S")));
+    const worktree = restoreArgs.some((a) => a === "--worktree" || (isShort(a) && a.includes("W")));
+    // The default target when neither flag is present is the working tree.
+    if (worktree || !staged) {
+      block(`Repo-wide 'git restore .' discards all uncommitted working-tree changes with no undo and requires explicit user authorization.`);
+    }
+  }
+
+  // Rule 10: git stash drop / clear permanently removes stashed work.
+  const stashArgs = afterGitSub(seg, "stash");
+  if (stashArgs && (stashArgs[0] === "drop" || stashArgs[0] === "clear")) {
+    block(`git stash ${stashArgs[0]} permanently removes stashed work with no undo and requires explicit user authorization.`);
+  }
+
+  // Rule 11: git branch -D force-deletes a branch even when unmerged. Guard the
+  // branches that carry work: tasks/* feature branches and protected branches.
+  const branchArgs = afterGitSub(seg, "branch");
+  if (branchArgs) {
+    // Force-delete is `-D` (incl. bundled forms like -Df), or a `-d`/--delete
+    // paired with a `-f`/--force, incl. short clusters like -fd / -df. `-D` is
+    // uppercase, so it is matched case-sensitively and separately from `-d`.
+    const capD = branchArgs.some((a) => isShort(a) && a.includes("D"));
+    const del = branchArgs.some((a) => a === "--delete" || (isShort(a) && a.includes("d")));
+    const force = branchArgs.some((a) => a === "--force" || (isShort(a) && a.includes("f")));
+    const forceDelete = capD || (del && force);
+    if (forceDelete) {
+      for (const target of branchArgs.filter((a) => !a.startsWith("-"))) {
+        if (target.startsWith("tasks/") || protectedSet.has(target)) {
+          block(`git branch -D of '${target}' force-deletes an unmerged branch with no undo and requires explicit user authorization.`);
+        }
+      }
+    }
+  }
+
+  // Rule 12: git worktree remove --force deletes a worktree that still holds
+  // uncommitted changes. Without --force git refuses on a dirty worktree, so
+  // only the forced form is destructive.
+  const wtArgs = afterGitSub(seg, "worktree");
+  if (wtArgs && wtArgs[0] === "remove" && wtArgs.some((a) => a === "--force" || /^-f+$/.test(a))) {
+    block(`git worktree remove --force deletes a worktree with uncommitted changes and requires explicit user authorization.`);
+  }
 }
 
 process.exit(0);
