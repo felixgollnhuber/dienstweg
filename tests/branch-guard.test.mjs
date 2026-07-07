@@ -46,8 +46,14 @@ const BLOCK = [
   "git stash clear",
   "git branch -D tasks/die-5-foo",
   "git branch -D main",
+  "git branch -Df tasks/die-5-foo",
+  "git branch -fd tasks/die-5-foo",
   "git worktree remove --force .claude/worktrees/tasks+x",
+  "git worktree remove -f .claude/worktrees/tasks+x",
   "git add . && git reset --hard",
+  "git checkout HEAD -- .",
+  "git restore -SW .",
+  "git -C sub clean -f",
 ];
 
 // Commands that MUST be allowed (exit 0) - legitimate look-alikes.
@@ -66,7 +72,9 @@ const ALLOW = [
   "git checkout -b tasks/foo",
   "git checkout -- path/to/file",
   "git restore --staged .",
+  "git restore -S .",
   "git restore path/to/file",
+  "git clean -nf",
   "git stash",
   "git stash pop",
   "git branch -d merged-feature",

@@ -291,10 +291,13 @@ for (const seg of segments(prepared)) {
   // branches that carry work: tasks/* feature branches and protected branches.
   const branchArgs = afterGitSub(seg, "branch");
   if (branchArgs) {
-    const forceDelete =
-      branchArgs.includes("-D") ||
-      ((branchArgs.includes("--delete") || branchArgs.includes("-d")) &&
-        (branchArgs.includes("--force") || branchArgs.includes("-f")));
+    // Force-delete is `-D` (incl. bundled forms like -Df), or a `-d`/--delete
+    // paired with a `-f`/--force, incl. short clusters like -fd / -df. `-D` is
+    // uppercase, so it is matched case-sensitively and separately from `-d`.
+    const capD = branchArgs.some((a) => isShort(a) && a.includes("D"));
+    const del = branchArgs.some((a) => a === "--delete" || (isShort(a) && a.includes("d")));
+    const force = branchArgs.some((a) => a === "--force" || (isShort(a) && a.includes("f")));
+    const forceDelete = capD || (del && force);
     if (forceDelete) {
       for (const target of branchArgs.filter((a) => !a.startsWith("-"))) {
         if (target.startsWith("tasks/") || protectedSet.has(target)) {
