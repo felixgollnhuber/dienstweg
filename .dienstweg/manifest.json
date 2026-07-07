@@ -2,10 +2,10 @@
   "dienstwegVersion": "0.3.1",
   "files": {
     ".claude/commands/create-issue.md": "8f3b32e1e4258ce09bf107be7e083b00bcb1895b981c86dfc3a2727eb3be5cdc",
-    ".claude/commands/start-task.md": "039fc4bb70b353b65e49b9e25fb41f40a88f2c6c5275b90ad63ff905d0c58a1d",
+    ".claude/commands/start-task.md": "b7d082ce43da34524a27511426e0d0ed477189396dce649ce5ba6c155717cdff",
     ".claude/hooks/branch-guard.mjs": "e9c323079c6951560bf501dd906670eba85a0c161718d9343c29ea3d2a40e6e4",
     ".agents/skills/create-issue/SKILL.md": "4bd11aa8bbf0693fac9235fa75661869ecd9221b8698a60bb988784aed276960",
-    ".agents/skills/start-task/SKILL.md": "ff5d218839158006ddf8aaf0a3413d9f2435ebe429e012c59633363d6d7cbe81",
+    ".agents/skills/start-task/SKILL.md": "b9ac8e5c6c903a948d5b48b0101d9b7f89487809c36eb7ca9d2ab664328b88fd",
     ".codex/hooks/branch-guard.mjs": "e9c323079c6951560bf501dd906670eba85a0c161718d9343c29ea3d2a40e6e4"
   }
 }
