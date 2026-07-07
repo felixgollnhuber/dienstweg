@@ -107,6 +107,7 @@ export function renderAgentsBlock(config) {
     ensembleSize: String(config.review.ensembleSize),
     maxRounds: String(config.review.maxRounds),
     subagentType: config.review.subagentType,
+    stances: listOrDash(config.review.stances),
     mergePolicy,
     extraDoD: extraDoD ? `\n${extraDoD}` : "",
     extraConstraints: listOrDash(config.extraConstraints),

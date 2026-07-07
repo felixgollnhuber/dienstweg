@@ -14,7 +14,7 @@ import {
   wireHooks,
   orphanedHarnessArtifacts,
 } from "../src/generate.mjs";
-import { tmpRepo, cleanupAll } from "./helpers.mjs";
+import { tmpRepo, cleanupAll, ROOT } from "./helpers.mjs";
 
 after(cleanupAll);
 
@@ -66,6 +66,35 @@ test("renderAgentsBlock resolves all tokens and labels harnesses", () => {
   // Review paragraph is harness-neutral (no subagent_type leak).
   assert.doesNotMatch(out, /subagent_type=/);
   assert.match(out, /codex exec/);
+});
+
+test("renderAgentsBlock renders reviewer stances in the review paragraph", () => {
+  const out = renderAgentsBlock(cfg());
+  assert.match(out, /distinct stance/);
+  assert.match(out, /adversarial, spec-conformance, maintainer/);
+  assert.match(out, /round-robin/);
+  // The spec-conformance Plan/AC clause is conditional on the stance being
+  // configured, so a custom stance set never leaves a dangling reviewer claim.
+  assert.match(out, /When a `spec-conformance` stance is configured/);
+});
+
+test("renderAgentsBlock reflects custom stances from config", () => {
+  const c = cfg();
+  c.review.stances = ["security", "performance"];
+  assert.match(renderAgentsBlock(c), /security, performance/);
+});
+
+test("committed start-task templates instruct per-reviewer stances", () => {
+  for (const rel of [
+    "templates/claude/commands/start-task.md",
+    "templates/codex/skills/start-task/SKILL.md",
+  ]) {
+    const body = readFileSync(join(ROOT, rel), "utf8");
+    assert.match(body, /stance/i, `${rel} should reference reviewer stances`);
+    assert.match(body, /config\.review\.stances/, `${rel} should read config.review.stances`);
+    assert.match(body, /round-robin/, `${rel} should describe round-robin assignment`);
+    assert.match(body, /spec-conformance/, `${rel} should name the spec-conformance stance`);
+  }
 });
 
 test("renderAgentsBlock label for a single harness", () => {
