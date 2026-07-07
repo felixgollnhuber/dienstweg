@@ -13,9 +13,11 @@ import {
   writeManifest,
   renderAgentsBlock,
   upsertAgentsBlock,
+  ensureGitignored,
   wireHooks,
   orphanedHarnessArtifacts,
 } from "./generate.mjs";
+import { GUARD_LOG_GITIGNORE_ENTRY } from "./guard-log.mjs";
 import { migrations } from "../migrations/index.mjs";
 import { registerRepo } from "./registry.mjs";
 
@@ -74,6 +76,9 @@ export function runUpdate(root, flags) {
   const mode = flags.force ? "overwrite" : "skip";
   const { manifest, skipped } = writeGeneratedFiles(root, previousManifest, mode, config.harnesses);
   writeManifest(root, manifest);
+  // The branch-guard decision log is a per-machine artifact, never committed.
+  // Idempotent, so re-running update on an already-ignored repo is a no-op.
+  ensureGitignored(root, [GUARD_LOG_GITIGNORE_ENTRY]);
   const hookResult = wireHooks(root, config.harnesses);
   const agentsActions = upsertAgentsBlock(root, renderAgentsBlock(config));
 

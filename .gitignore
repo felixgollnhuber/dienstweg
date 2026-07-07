@@ -4,3 +4,4 @@ node_modules/
 .dienstweg/onboarding-prompt.md
 .claude/worktrees/
 .codex/worktrees/
+.dienstweg/guard-log.jsonl

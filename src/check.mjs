@@ -18,6 +18,7 @@ import {
   renderAgentsBlock,
   agentsMarkerState,
 } from "./generate.mjs";
+import { guardLogDiagnostics } from "./guard-log.mjs";
 
 const NO_CONFIG_MSG = "no dienstweg.config.json found - run `dienstweg init` first.";
 
@@ -156,6 +157,13 @@ export function computeCheck(root) {
       }
     }
   }
+
+  // Branch-guard decision log (DIE-8): recent blocks -> INFO, fail-open -> FAIL.
+  // Purely additive to the existing infos/problems, so the result shape and the
+  // exit-code contract are unchanged; a recent fail-open flips ok to false.
+  const guardLog = guardLogDiagnostics(root);
+  infos.push(...guardLog.infos);
+  problems.push(...guardLog.problems);
 
   return {
     ...base,

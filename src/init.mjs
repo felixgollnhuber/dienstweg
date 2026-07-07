@@ -1,5 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
 import {
   CLI_VERSION,
   STATE_DIR,
@@ -16,24 +15,16 @@ import {
   renderAgentsBlock,
   upsertAgentsBlock,
   ensureLocalRules,
+  ensureGitignored,
   wireHooks,
 } from "./generate.mjs";
+import { GUARD_LOG_GITIGNORE_ENTRY } from "./guard-log.mjs";
 import {
   collectFindings,
   buildOnboardingPrompt,
   writeOnboardingPrompt,
 } from "./onboarding.mjs";
 import { registerRepo } from "./registry.mjs";
-
-// Ensures .gitignore ignores the throwaway onboarding prompt (it is a
-// per-machine artifact, not a committed file).
-function ignoreOnboardingPrompt(root) {
-  const entry = `${STATE_DIR}/onboarding-prompt.md`;
-  const p = join(root, ".gitignore");
-  const current = existsSync(p) ? readFileSync(p, "utf8") : "";
-  if (current.split(/\r?\n/).includes(entry)) return;
-  writeFileSync(p, current + (current && !current.endsWith("\n") ? "\n" : "") + entry + "\n");
-}
 
 // The tool-owned directories to commit, per active harness (Claude: .claude;
 // Codex: .codex hooks + .agents skills). Shown in the closing "commit these
@@ -74,6 +65,8 @@ export async function runInit(root, flags) {
 
   const { manifest, skipped } = writeGeneratedFiles(root, null, "skip", config.harnesses);
   writeManifest(root, manifest);
+  // The branch-guard decision log is a per-machine artifact, never committed.
+  ensureGitignored(root, [GUARD_LOG_GITIGNORE_ENTRY]);
   const hookResult = wireHooks(root, config.harnesses);
   const agentsActions = upsertAgentsBlock(root, renderAgentsBlock(config));
   const localCreated = ensureLocalRules(root);
@@ -92,7 +85,7 @@ export async function runInit(root, flags) {
   if (localCreated) console.log("  written:  dienstweg.local.md (project-owned stub)");
 
   if (needsAudit) {
-    ignoreOnboardingPrompt(root);
+    ensureGitignored(root, [`${STATE_DIR}/onboarding-prompt.md`]);
     const prompt = buildOnboardingPrompt(config, findings);
     const promptPath = writeOnboardingPrompt(root, prompt);
     const rel = promptPath.replace(root + "/", "");

@@ -232,6 +232,22 @@ export function ensureLocalRules(root) {
   return true;
 }
 
+// Ensures each entry appears on its own line in the repo's .gitignore, appending
+// any that are missing. Idempotent: an entry already present is left as-is, and
+// the file's trailing-newline state is preserved. Shared by init and update (both
+// must gitignore per-machine artifacts like the guard log). Returns the entries
+// actually added, so callers can decide whether to mention it.
+export function ensureGitignored(root, entries) {
+  const p = join(root, ".gitignore");
+  const current = existsSync(p) ? readFileSync(p, "utf8") : "";
+  const lines = current.split(/\r?\n/);
+  const missing = entries.filter((e) => !lines.includes(e));
+  if (missing.length === 0) return [];
+  const prefix = current && !current.endsWith("\n") ? "\n" : "";
+  writeFileSync(p, current + prefix + missing.join("\n") + "\n");
+  return missing;
+}
+
 const HOOK_COMMAND = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/branch-guard.mjs"';
 
 // True if the branch-guard is already wired in either settings file. Used so
