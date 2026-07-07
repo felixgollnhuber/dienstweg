@@ -29,4 +29,12 @@ export const migrations = [
       config.harnesses ??= ["claude", "codex"];
     },
   },
+  {
+    toSchemaVersion: 4,
+    description: "add review.stances - decorrelate the ensemble via distinct reviewer stances (existing configs gain the defaults)",
+    migrate(config) {
+      config.review ??= {};
+      config.review.stances ??= ["adversarial", "spec-conformance", "maintainer"];
+    },
+  },
 ];

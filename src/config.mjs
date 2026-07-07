@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 export const CONFIG_FILENAME = "dienstweg.config.json";
 export const STATE_DIR = ".dienstweg";
 export const MANIFEST_FILENAME = "manifest.json";
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 export const MARKER_BEGIN = "<!-- dienstweg:begin -->";
 export const MARKER_END = "<!-- dienstweg:end -->";
 
@@ -13,6 +13,12 @@ export const MARKER_END = "<!-- dienstweg:end -->";
 // into. Each maps to its own tool-owned files (see generatedFiles in
 // generate.mjs); the branch-guard script itself is harness-neutral.
 export const KNOWN_HARNESSES = ["claude", "codex"];
+
+// Default reviewer stances for the ensemble review. Each reviewer keeps the
+// same broad, full-PR scope but takes a distinct stance so the ensemble
+// decorrelates (fewer shared blind spots). Free-form strings - projects may
+// tune these; round-robin assignment covers any ensembleSize.
+export const DEFAULT_STANCES = ["adversarial", "spec-conformance", "maintainer"];
 
 const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
 export const CLI_VERSION = JSON.parse(readFileSync(pkgPath, "utf8")).version;
@@ -78,6 +84,7 @@ export function defaultConfig(answers) {
       ensembleSize: 3,
       maxRounds: 3,
       subagentType: "ensemble-reviewer",
+      stances: [...DEFAULT_STANCES],
     },
     merge: {
       auto: answers.autoMerge,
@@ -103,6 +110,7 @@ const REQUIRED_PATHS = [
   ["review", "ensembleSize"],
   ["review", "maxRounds"],
   ["review", "subagentType"],
+  ["review", "stances"],
   ["merge", "auto"],
 ];
 
@@ -130,6 +138,14 @@ export function validateConfig(config) {
       if (unknown.length) {
         problems.push(`harnesses has unknown value(s) ${JSON.stringify(unknown)} - allowed: ${KNOWN_HARNESSES.join(", ")}.`);
       }
+    }
+  }
+  const stances = config?.review?.stances;
+  if (stances !== undefined && stances !== null) {
+    if (!Array.isArray(stances) || stances.length === 0) {
+      problems.push(`review.stances must be a non-empty array of stance names (e.g. ${JSON.stringify(DEFAULT_STANCES)}), got ${JSON.stringify(stances)}.`);
+    } else if (stances.some((s) => typeof s !== "string" || s.trim() === "")) {
+      problems.push(`review.stances must contain only non-empty strings, got ${JSON.stringify(stances)}.`);
     }
   }
   const autoMerge = config?.merge?.auto;
