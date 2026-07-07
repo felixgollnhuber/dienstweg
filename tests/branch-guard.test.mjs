@@ -76,6 +76,10 @@ const BLOCK = [
   "git add -- .env",
   "git add src/app.js .env",
   "git -C sub add .env",
+  // Case-insensitive: same file on macOS/Windows must not slip through (DIE-7).
+  "git add CERT.PEM",
+  "git add .ENV",
+  "git add secrets/ID_RSA",
 ];
 
 // Commands that MUST be allowed (exit 0) - legitimate look-alikes.
@@ -119,6 +123,10 @@ const ALLOW = [
   "git add -p",
   "git add README.md",
   "git add environment.ts",
+  // Public key is safe; exclude-pathspec magic is not a real path (DIE-7).
+  "git add id_rsa.pub",
+  "git add secrets/id_rsa.pub",
+  "git add . :!config.pem",
 ];
 
 const dir = project();
@@ -184,4 +192,13 @@ test("secret denylist: secretAllowlist exempts a would-be-denied file", () => {
   const alw = guardProject({ secretAllowlist: ["credentials.json"] });
   assert.equal(runGuard("git add credentials.json", alw, "codex").status, 0, "allowlisted file exempted");
   assert.equal(runGuard("git add credentials.yml", alw, "codex").status, 2, "non-exempt secret still blocked");
+});
+
+// A non-string denylist entry (config typo) must not crash the hook at load
+// time - a crash would exit non-2/non-0 and fail OPEN for every rule.
+test("secret denylist: a non-string config entry fails safe, not open", () => {
+  const bad = guardProject({ secretDenylist: ["*.key", 123, null] });
+  assert.equal(runGuard("git add .env", bad, "codex").status, 2, "default still blocks");
+  assert.equal(runGuard("git add app.key", bad, "codex").status, 2, "valid custom pattern still blocks");
+  assert.equal(runGuard("git push --force origin main", bad, "codex").status, 2, "unrelated rules still active");
 });

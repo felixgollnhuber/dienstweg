@@ -147,16 +147,22 @@ function refspecDest(refspec) {
 // Matched against the BASENAME of each path, so `config/.env` is caught too.
 const DEFAULT_SECRET_DENYLIST = [".env", ".env.*", "*.pem", "id_rsa*", "credentials*"];
 // Safe look-alikes that stay stageable even though they match the denylist
-// (`.env.example` matches `.env.*`). The allowlist always wins over the denylist.
-const DEFAULT_SECRET_ALLOWLIST = [".env.example", ".env.sample", ".env.template", ".env.dist"];
+// (`.env.example` matches `.env.*`; `id_rsa.pub` is a public key, matched by
+// `id_rsa*`). The allowlist always wins over the denylist.
+const DEFAULT_SECRET_ALLOWLIST = [".env.example", ".env.sample", ".env.template", ".env.dist", "id_rsa.pub"];
 
 // Compile a glob-ish pattern (only `*` is special) to an anchored RegExp.
+// Case-insensitive: on macOS/Windows (case-preserving but case-insensitive
+// filesystems) `CERT.PEM` and `.env` name the same file git would stage, so a
+// case-sensitive match would be a false negative for a secret guard.
 function globToRegExp(glob) {
   const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-  return new RegExp(`^${escaped}$`);
+  return new RegExp(`^${escaped}$`, "i");
 }
 
 // Basename of a path token: last non-empty segment, trailing slashes stripped.
+// `/`-only on purpose: git pathspecs use forward slashes on every OS, unlike
+// node:path.basename which also splits on `\` on win32 - do not swap it in.
 function basename(p) {
   const parts = p.replace(/\/+$/, "").split("/");
   return parts[parts.length - 1] || p;
@@ -195,8 +201,12 @@ const protectedSet = new Set(
 // `secretDenylist` extends the defaults, or replaces them when
 // `secretDenylistReplace` is true; `secretAllowlist` extends the exceptions.
 const guard = config.guard || {};
-const guardDeny = Array.isArray(guard.secretDenylist) ? guard.secretDenylist : [];
-const guardAllow = Array.isArray(guard.secretAllowlist) ? guard.secretAllowlist : [];
+// Filter to strings before compiling: a non-string element (a config typo like
+// a number or null) would make globToRegExp throw at load time - and because
+// that runs outside any try/catch, it would abort the whole hook and fail OPEN
+// for every rule, not just this one.
+const guardDeny = Array.isArray(guard.secretDenylist) ? guard.secretDenylist.filter((s) => typeof s === "string") : [];
+const guardAllow = Array.isArray(guard.secretAllowlist) ? guard.secretAllowlist.filter((s) => typeof s === "string") : [];
 const secretDeny = (guard.secretDenylistReplace ? guardDeny : [...DEFAULT_SECRET_DENYLIST, ...guardDeny]).map(globToRegExp);
 const secretAllow = [...DEFAULT_SECRET_ALLOWLIST, ...guardAllow].map(globToRegExp);
 
@@ -384,6 +394,9 @@ for (const seg of segments(prepared)) {
         continue;
       }
       if (!pathsOnly && a.startsWith("-")) continue;
+      // Pathspec magic (`:!*.pem`, `:(exclude)...`) is not a real path - skip it
+      // so an exclude pathspec is not misread as staging the file it excludes.
+      if (a.startsWith(":")) continue;
       const base = basename(a);
       if (secretDeny.some((re) => re.test(base)) && !secretAllow.some((re) => re.test(base))) {
         block(`git add of '${a}' stages a file matching the secret denylist and requires explicit user authorization. If this file is genuinely safe, add its name to guard.secretAllowlist in dienstweg.config.json.`);
