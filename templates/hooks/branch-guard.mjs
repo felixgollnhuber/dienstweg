@@ -18,11 +18,57 @@
 // git.protectedBranches). If the config cannot be found or parsed, the hook
 // warns and allows - a broken config must not lock up unrelated work; run
 // `dienstweg check` to surface it.
+//
+// Observability: every rule carries a stable id and every decision (block /
+// warn / fail-open) appends one JSON line to `.dienstweg/guard-log.jsonl` next
+// to the config (see logDecision). The logging is strictly best-effort and
+// silent - it never changes the block/allow decision or the exit code - and
+// `dienstweg check` surfaces recent blocks (INFO) and fail-open events (FAIL).
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 const NAME = "branch-guard";
+
+// Where a guard decision is logged, resolved once the config location is known
+// (see the config lookup below). logDecision closes over it so the ~16 block()
+// sites do not each have to thread it through. Null until resolved.
+let logDir = null;
+
+// The guard log lives next to the config, in the state dir. This path is the
+// standalone-hook mirror of src/guard-log.mjs's GUARD_LOG_GITIGNORE_ENTRY: a
+// rendered hook cannot import from src, so keep the two in sync by hand.
+const GUARD_LOG_REL = ".dienstweg/guard-log.jsonl";
+
+// Appends one JSON line recording a guard decision (block / warn / fail-open) to
+// the project's guard log. Best-effort and SILENT by contract: a write failure
+// (missing .dienstweg/ dir, read-only fs, ...) must never throw and must never
+// change the hook's exit code - the block/allow decision is the guarantee, the
+// log is only observability. It deliberately never mkdirs: on an uninitialized
+// repo (.dienstweg/ absent) this no-ops rather than creating stray state.
+function logDecision(rule, decision) {
+  try {
+    if (!logDir) return;
+    // Redact inline URL credentials before logging: this guard's own job includes
+    // secret hygiene, so its log - though gitignored and per-machine - should not
+    // persist a token/password verbatim. Everything between `scheme://` and the
+    // `@` of a `host` authority is replaced, covering both `user:token@host` and
+    // token-only `token@host` forms (the `[^/\s]` class stops at the path, so a
+    // literal `@` inside the path is untouched). Redact first, then truncate, so a
+    // secret near the 500-char cut is still hidden. The regex has a single
+    // quantifier - linear, no catastrophic backtracking.
+    const safe = command.replace(/(:\/\/)[^/\s]+@/g, "$1***@");
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      rule,
+      decision,
+      command: safe.length > 500 ? safe.slice(0, 500) : safe,
+    });
+    appendFileSync(join(logDir, GUARD_LOG_REL), line + "\n");
+  } catch {
+    // silent: observability must never break the guard
+  }
+}
 
 function findConfig(payloadCwd) {
   // Claude Code exposes CLAUDE_PROJECT_DIR; Codex exposes no project-dir env var
@@ -45,9 +91,17 @@ function findConfig(payloadCwd) {
   }
   for (const c of candidates) {
     const p = join(c, "dienstweg.config.json");
-    if (existsSync(p)) return JSON.parse(readFileSync(p, "utf8"));
+    if (existsSync(p)) {
+      // Return the directory even when the JSON is invalid, so a fail-open
+      // decision can still be logged next to the (broken) config instead of lost.
+      try {
+        return { config: JSON.parse(readFileSync(p, "utf8")), dir: c };
+      } catch {
+        return { config: null, dir: c };
+      }
+    }
   }
-  return null;
+  return { config: null, dir: null };
 }
 
 function readStdin() {
@@ -58,7 +112,8 @@ function readStdin() {
   }
 }
 
-function block(reason) {
+function block(rule, reason) {
+  logDecision(rule, "block");
   process.stderr.write(`[${NAME}] BLOCKED: ${reason}\n`);
   process.exit(2);
 }
@@ -181,13 +236,22 @@ try {
 const command = payload?.tool_input?.command;
 if (typeof command !== "string") process.exit(0);
 
+const payloadCwd = typeof payload?.cwd === "string" ? payload.cwd : null;
 let config = null;
+let configDir = null;
 try {
-  config = findConfig(typeof payload?.cwd === "string" ? payload.cwd : null);
+  const found = findConfig(payloadCwd);
+  config = found.config;
+  configDir = found.dir;
 } catch {
   config = null;
 }
+// Log next to the config when its location is known (even a broken config's dir);
+// otherwise best-effort next to the payload cwd / process cwd. logDecision is a
+// silent no-op when .dienstweg/ is absent there.
+logDir = configDir || payloadCwd || process.cwd();
 if (!config?.git?.baseBranch) {
+  logDecision("config-unreadable", "fail-open");
   process.stderr.write(`[${NAME}] WARN: dienstweg.config.json not found/invalid - allowing. Run \`dienstweg check\`.\n`);
   process.exit(0);
 }
@@ -242,11 +306,11 @@ for (const seg of segments(prepared)) {
       }
     }
     if (bases.length === 0) {
-      block(`gh pr create without --base is forbidden. Pass --base ${prBase} explicitly. See the dienstweg block in AGENTS.md.`);
+      block("pr-base-missing", `gh pr create without --base is forbidden. Pass --base ${prBase} explicitly. See the dienstweg block in AGENTS.md.`);
     }
     const base = bases[bases.length - 1];
     if (base !== prBase) {
-      block(`gh pr create --base ${base} is forbidden. PRs must target '${prBase}'. See the dienstweg block in AGENTS.md.`);
+      block("pr-base-mismatch", `gh pr create --base ${base} is forbidden. PRs must target '${prBase}'. See the dienstweg block in AGENTS.md.`);
     }
   }
 
@@ -257,7 +321,7 @@ for (const seg of segments(prepared)) {
     commitArgs &&
     commitArgs.some((a) => a === "--no-verify" || (/^-[a-zA-Z]*n[a-zA-Z]*$/.test(a) && !a.startsWith("--")))
   ) {
-    block(`git commit --no-verify is forbidden unless the user explicitly requested it. If a hook fails, investigate and fix the underlying issue.`);
+    block("commit-no-verify", `git commit --no-verify is forbidden unless the user explicitly requested it. If a hook fails, investigate and fix the underlying issue.`);
   }
 
   // Rule 4/5: pushes to protected branches (force = worse, but both blocked).
@@ -291,24 +355,25 @@ for (const seg of segments(prepared)) {
       if (!protectedSet.has(dst)) {
         // Non-protected branch: steer a hard force to the leased form; a leased
         // force (--force-with-lease) or a plain push stays allowed.
-        if (hardForceHere) block(`git push --force to '${dst}' can overwrite commits you have not fetched. ${leaseHint}`);
+        if (hardForceHere) block("push-force-nonprotected", `git push --force to '${dst}' can overwrite commits you have not fetched. ${leaseHint}`);
         continue;
       }
-      if (isDelete) block(`Deleting the protected branch '${dst}' on the remote is forbidden.`);
-      if (force) block(`git push ${forceLabel} to '${dst}' is destructive on a shared branch and requires explicit user authorization.`);
-      block(`Direct push to '${dst}' is forbidden. Integration happens via PR (base ${prBase}).`);
+      if (isDelete) block("push-delete-protected", `Deleting the protected branch '${dst}' on the remote is forbidden.`);
+      if (force) block("push-force-protected", `git push ${forceLabel} to '${dst}' is destructive on a shared branch and requires explicit user authorization.`);
+      block("push-protected", `Direct push to '${dst}' is forbidden. Integration happens via PR (base ${prBase}).`);
     }
     // A bare hard force with no branch refspec (destination unknown): --force is
     // never preferable to --force-with-lease, so steer to the safe form. A bare
     // --force-with-lease has hardForce === false and is left alone.
     if (hardForce && explicitRefspecs.length === 0 && branchRefspecs.length === 0) {
-      block(`git push --force can overwrite commits you have not fetched. ${leaseHint}`);
+      block("push-force-bare", `git push --force can overwrite commits you have not fetched. ${leaseHint}`);
     }
   }
 
   // Rule 6: gh pr merge without an explicit strategy drifts from the convention.
   const mergeArgs = afterGhPr(seg, "merge");
   if (mergeArgs && !mergeArgs.some((a) => a === "--squash" || a === "--merge" || a === "--rebase")) {
+    logDecision("pr-merge-no-strategy", "warn");
     process.stderr.write(`[${NAME}] WARN: gh pr merge without an explicit strategy. Convention is --squash --delete-branch. Continuing.\n`);
   }
 
@@ -319,7 +384,7 @@ for (const seg of segments(prepared)) {
   // Rule 7: git reset --hard discards every uncommitted change with no undo.
   const resetArgs = afterGitSub(seg, "reset");
   if (resetArgs && resetArgs.includes("--hard")) {
-    block(`git reset --hard discards all uncommitted changes with no undo and requires explicit user authorization.`);
+    block("reset-hard", `git reset --hard discards all uncommitted changes with no undo and requires explicit user authorization.`);
   }
 
   // Rule 8: git clean -f permanently deletes untracked files (bundled short
@@ -329,7 +394,7 @@ for (const seg of segments(prepared)) {
     const cleanForce = cleanArgs.some((a) => a === "--force" || (isShort(a) && a.includes("f")));
     const cleanDryRun = cleanArgs.some((a) => a === "--dry-run" || (isShort(a) && a.includes("n")));
     if (cleanForce && !cleanDryRun) {
-      block(`git clean -f permanently deletes untracked files with no undo and requires explicit user authorization.`);
+      block("clean-force", `git clean -f permanently deletes untracked files with no undo and requires explicit user authorization.`);
     }
   }
 
@@ -342,7 +407,7 @@ for (const seg of segments(prepared)) {
   const isCwdPathspec = (a) => a === "." || a === "./";
   const coArgs = afterGitSub(seg, "checkout");
   if (coArgs && coArgs.some(isCwdPathspec)) {
-    block(`Repo-wide 'git checkout .' discards all uncommitted working-tree changes with no undo and requires explicit user authorization.`);
+    block("checkout-worktree-wide", `Repo-wide 'git checkout .' discards all uncommitted working-tree changes with no undo and requires explicit user authorization.`);
   }
   const restoreArgs = afterGitSub(seg, "restore");
   if (restoreArgs && restoreArgs.some(isCwdPathspec)) {
@@ -350,14 +415,14 @@ for (const seg of segments(prepared)) {
     const worktree = restoreArgs.some((a) => a === "--worktree" || (isShort(a) && a.includes("W")));
     // The default target when neither flag is present is the working tree.
     if (worktree || !staged) {
-      block(`Repo-wide 'git restore .' discards all uncommitted working-tree changes with no undo and requires explicit user authorization.`);
+      block("restore-worktree-wide", `Repo-wide 'git restore .' discards all uncommitted working-tree changes with no undo and requires explicit user authorization.`);
     }
   }
 
   // Rule 10: git stash drop / clear permanently removes stashed work.
   const stashArgs = afterGitSub(seg, "stash");
   if (stashArgs && (stashArgs[0] === "drop" || stashArgs[0] === "clear")) {
-    block(`git stash ${stashArgs[0]} permanently removes stashed work with no undo and requires explicit user authorization.`);
+    block("stash-drop-clear", `git stash ${stashArgs[0]} permanently removes stashed work with no undo and requires explicit user authorization.`);
   }
 
   // Rule 11: git branch -D force-deletes a branch even when unmerged. Guard the
@@ -374,7 +439,7 @@ for (const seg of segments(prepared)) {
     if (forceDelete) {
       for (const target of branchArgs.filter((a) => !a.startsWith("-"))) {
         if (target.startsWith("tasks/") || protectedSet.has(target)) {
-          block(`git branch -D of '${target}' force-deletes an unmerged branch with no undo and requires explicit user authorization.`);
+          block("branch-force-delete", `git branch -D of '${target}' force-deletes an unmerged branch with no undo and requires explicit user authorization.`);
         }
       }
     }
@@ -385,7 +450,7 @@ for (const seg of segments(prepared)) {
   // only the forced form is destructive.
   const wtArgs = afterGitSub(seg, "worktree");
   if (wtArgs && wtArgs[0] === "remove" && wtArgs.some((a) => a === "--force" || /^-f+$/.test(a))) {
-    block(`git worktree remove --force deletes a worktree with uncommitted changes and requires explicit user authorization.`);
+    block("worktree-remove-force", `git worktree remove --force deletes a worktree with uncommitted changes and requires explicit user authorization.`);
   }
 
   // Rule 13: git add of a secret file (`.env`, private keys, credential dumps)
@@ -421,7 +486,7 @@ for (const seg of segments(prepared)) {
       }
       const base = basename(tok);
       if (secretDeny.some((re) => re.test(base)) && !secretAllow.some((re) => re.test(base))) {
-        block(`git add of '${a}' stages a file matching the secret denylist and requires explicit user authorization. If this file is genuinely safe, add its name to guard.secretAllowlist in dienstweg.config.json.`);
+        block("add-secret", `git add of '${a}' stages a file matching the secret denylist and requires explicit user authorization. If this file is genuinely safe, add its name to guard.secretAllowlist in dienstweg.config.json.`);
       }
     }
   }
