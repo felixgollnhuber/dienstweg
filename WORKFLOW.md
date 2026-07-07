@@ -60,11 +60,13 @@ Exactly one per issue: `parallel-safe` (touches no hot area) or `single-writer:<
 1. Claim: `save_issue state="In Progress" assignee="me"`.
 2. Plan BEFORE code into the description (`## Plan`), structured via `/start-task`.
 3. During work: check off AC boxes via description patches, add notes as comments, update the plan as needed.
-4. Scope changes: ask or create a follow-up issue - never silently.
+4. Plan amendments vs. scope changes: when the approved plan is merely insufficient (a few extra touch points), amend it (see "Plan amendments" below); a genuine new goal or feature is a scope change - ask or create a follow-up issue, never silently.
 5. Backlog discipline BEFORE the PR is merged: all AC + DoD boxes checked, `## Final Summary` with merge-SHA placeholder + PR number, `state="In Review"`. These are Linear description patches, not git commits - do them before the merge so the review gate sees a complete issue.
 6. Ensemble review (section 6) including direct fixes and re-review rounds.
 7. Auto-merge (section 7) including the post-merge sync step - or, with `merge.auto: false`, stop at `In Review` and hand the merge to the user.
 8. Close out: `state="Done"` + finalize `## Final Summary` (real merge SHA, review rounds, follow-up issues).
+
+**Plan amendments (mid-task re-planning).** The `## Plan` is not frozen once approved. When the `/goal` loop discovers it is insufficient - a helper, test, or doc file must also change that was not in the touch points - it does *not* silently widen scope. Instead it appends an `### Amendments` sub-section to the `## Plan` block via a `save_issue` description patch, one entry per amendment recording **reason**, **new touch points** (the files added to the plan), and a **LOC estimate**. The move is autonomous only when the amendment adds **≤2 new non-high-risk touch points** (a touch point is any file that must change but was not in the original plan, whether newly created or an existing file now edited); when it adds **>2** new touch points, or **any** high-risk area (`areas.highRisk`), the loop stops and asks the user first. Because a recorded amendment extends the plan, the `/goal` file-scope constraint reads "no files outside the *amended* plan's touch points" (§8) - so a properly-recorded amendment is not a violation, while touching unplanned files without amending still is. An amendment handles a plan that fell short; a genuine new goal or feature remains a scope change (§1.7) and still means ask or a follow-up issue.
 
 ## 6. Ensemble review (mandatory before every merge)
 
@@ -101,7 +103,7 @@ Gates (all must hold, otherwise report instead of merging):
 
 ## 8. The /goal loop
 
-`/start-task` ends with a ready-to-send `/goal` condition containing measurable end states: plan implemented, gates exit 0, AC boxes checked, PR created, ensemble review + synthesis done, DoD boxes + Final Summary + In Review set before the merge, auto-merge only with green gates, post-merge base sync confirmed, and `state="Done"` as the final step. With `merge.auto: false` the condition ends at `state="In Review"` plus a PR-URL/gate-status report instead of the merge and `state="Done"` steps. Constraints forbid `--no-verify`, hook bypasses, pushes to protected branches, force pushes, files outside the plan's touch points, plus everything in `extraConstraints`. High-risk issues add smaller commits + intermediate verification; single-writer issues add the lock constraint. Bounded at 40 turns.
+`/start-task` ends with a ready-to-send `/goal` condition containing measurable end states: plan implemented, gates exit 0, AC boxes checked, PR created, ensemble review + synthesis done, DoD boxes + Final Summary + In Review set before the merge, auto-merge only with green gates, post-merge base sync confirmed, and `state="Done"` as the final step. With `merge.auto: false` the condition ends at `state="In Review"` plus a PR-URL/gate-status report instead of the merge and `state="Done"` steps. Constraints forbid `--no-verify`, hook bypasses, pushes to protected branches, force pushes, files outside the *amended* plan's touch points (the plan may be extended mid-task via the amendment protocol, §5), plus everything in `extraConstraints`. High-risk issues add smaller commits + intermediate verification; single-writer issues add the lock constraint. Bounded at 40 turns.
 
 ## 9. Versioning and updates
 
