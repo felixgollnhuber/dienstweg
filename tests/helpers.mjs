@@ -12,6 +12,21 @@ export const GUARD_TEMPLATE = join(ROOT, "templates", "hooks", "branch-guard.mjs
 
 const tempDirs = [];
 
+// A throwaway XDG_CONFIG_HOME shared by every runCli that does not override it,
+// so the fleet registry (which init/update now write) never touches the real
+// ~/.config during tests. Created lazily on first use.
+let defaultConfigHome;
+function ensureDefaultConfigHome() {
+  if (!defaultConfigHome) defaultConfigHome = tmp("dienstweg-xdg-");
+  return defaultConfigHome;
+}
+
+// The fleet registry file for a given XDG_CONFIG_HOME - handy for asserting
+// registration in fleet tests.
+export function fleetFile(configHome) {
+  return join(configHome, "dienstweg", "fleet.json");
+}
+
 // Creates a throwaway directory under the OS temp dir. Registered for cleanup.
 export function tmp(prefix = "dienstweg-test-") {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -38,8 +53,11 @@ export function cleanupAll() {
 }
 
 // Runs the dienstweg CLI in `cwd` and returns { status, stdout, stderr }.
-export function runCli(args, cwd) {
-  const r = spawnSync("node", [BIN, ...args], { cwd, encoding: "utf8" });
+// `opts.env` merges into (and overrides) the child env; XDG_CONFIG_HOME defaults
+// to a shared temp dir so the fleet registry stays out of the real ~/.config.
+export function runCli(args, cwd, opts = {}) {
+  const env = { ...process.env, XDG_CONFIG_HOME: ensureDefaultConfigHome(), ...opts.env };
+  const r = spawnSync("node", [BIN, ...args], { cwd, encoding: "utf8", env });
   return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
 
