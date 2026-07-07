@@ -65,6 +65,25 @@ const BLOCK = [
   "git restore -SW .",
   "git restore ./",
   "git -C sub clean -f",
+  // Secret-file staging (DIE-7) - both payload shapes: plain add and force-add.
+  "git add .env",
+  "git add -f .env",
+  "git add --force .env",
+  "git add secrets/id_rsa",
+  "git add config/prod.pem",
+  "git add credentials.json",
+  "git add path/to/.env.local",
+  "git add -- .env",
+  "git add src/app.js .env",
+  "git -C sub add .env",
+  // Case-insensitive: same file on macOS/Windows must not slip through (DIE-7).
+  "git add CERT.PEM",
+  "git add .ENV",
+  "git add secrets/ID_RSA",
+  // Pathspec staging magic still resolves to a real secret path (DIE-7).
+  "git add :/.env",
+  "git add :(top).env",
+  "git add :(top,literal).env",
 ];
 
 // Commands that MUST be allowed (exit 0) - legitimate look-alikes.
@@ -98,6 +117,22 @@ const ALLOW = [
   "git branch -D throwaway-experiment",
   "git worktree remove .claude/worktrees/tasks+x",
   "git worktree list",
+  // Secret-file look-alikes and whole-tree adds stay allowed (DIE-7).
+  "git add .env.example",
+  "git add -f .env.example",
+  "git add .env.sample",
+  "git add src/app.js",
+  "git add .",
+  "git add -A",
+  "git add -p",
+  "git add README.md",
+  "git add environment.ts",
+  // Public key is safe; exclude-pathspec magic stages nothing (DIE-7).
+  "git add id_rsa.pub",
+  "git add secrets/id_rsa.pub",
+  "git add . :!config.pem",
+  "git add . :^config.pem",
+  "git add . :(exclude)secret.pem",
 ];
 
 const dir = project();
@@ -133,4 +168,52 @@ test("no config found -> guard allows (exit 0) and does not lock up work", () =>
   const empty = tmp("dienstweg-noconfig-");
   const { status } = runGuard("git push origin main", empty, "codex");
   assert.equal(status, 0);
+});
+
+// A project dir with a custom guard block for the secret denylist (DIE-7).
+function guardProject(guard) {
+  const dir = tmp("dienstweg-guard-cfg-");
+  writeFileSync(
+    join(dir, "dienstweg.config.json"),
+    JSON.stringify({ git: { baseBranch: "main", protectedBranches: ["main"] }, guard }),
+  );
+  return dir;
+}
+
+// AC #3: the secret denylist can be extended or overridden via the config.
+test("secret denylist: guard config extends the defaults", () => {
+  const ext = guardProject({ secretDenylist: ["*.key"] });
+  assert.equal(runGuard("git add .env", ext, "codex").status, 2, "default still blocks");
+  assert.equal(runGuard("git add app.key", ext, "codex").status, 2, "extended pattern blocks");
+  assert.equal(runGuard("git add app.js", ext, "codex").status, 0, "unrelated file allowed");
+});
+
+test("secret denylist: secretDenylistReplace overrides the defaults", () => {
+  const rep = guardProject({ secretDenylist: ["*.key"], secretDenylistReplace: true });
+  assert.equal(runGuard("git add .env", rep, "codex").status, 0, "default gone when replaced");
+  assert.equal(runGuard("git add app.key", rep, "codex").status, 2, "replacement pattern blocks");
+});
+
+test("secret denylist: secretAllowlist exempts a would-be-denied file", () => {
+  const alw = guardProject({ secretAllowlist: ["credentials.json"] });
+  assert.equal(runGuard("git add credentials.json", alw, "codex").status, 0, "allowlisted file exempted");
+  assert.equal(runGuard("git add credentials.yml", alw, "codex").status, 2, "non-exempt secret still blocked");
+});
+
+// A non-string denylist entry (config typo) must not crash the hook at load
+// time - a crash would exit non-2/non-0 and fail OPEN for every rule.
+test("secret denylist: a non-string config entry fails safe, not open", () => {
+  const bad = guardProject({ secretDenylist: ["*.key", 123, null] });
+  assert.equal(runGuard("git add .env", bad, "codex").status, 2, "default still blocks");
+  assert.equal(runGuard("git add app.key", bad, "codex").status, 2, "valid custom pattern still blocks");
+  assert.equal(runGuard("git push --force origin main", bad, "codex").status, 2, "unrelated rules still active");
+});
+
+// A replace list that filters to empty is a typo -> fall back to defaults; an
+// explicitly empty list is honored as an opt-out.
+test("secret denylist: replace with an all-typo list falls back to defaults", () => {
+  const typo = guardProject({ secretDenylist: [123, null], secretDenylistReplace: true });
+  assert.equal(runGuard("git add .env", typo, "codex").status, 2, "typo replace falls back to defaults");
+  const optOut = guardProject({ secretDenylist: [], secretDenylistReplace: true });
+  assert.equal(runGuard("git add .env", optOut, "codex").status, 0, "explicit empty replace opts out");
 });
