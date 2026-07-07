@@ -52,7 +52,9 @@ const BLOCK = [
   "git worktree remove -f .claude/worktrees/tasks+x",
   "git add . && git reset --hard",
   "git checkout HEAD -- .",
+  "git checkout ./",
   "git restore -SW .",
+  "git restore ./",
   "git -C sub clean -f",
 ];
 
@@ -71,6 +73,7 @@ const ALLOW = [
   "git checkout main",
   "git checkout -b tasks/foo",
   "git checkout -- path/to/file",
+  "git checkout -- ./src/file.js",
   "git restore --staged .",
   "git restore -S .",
   "git restore path/to/file",

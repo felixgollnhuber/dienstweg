@@ -267,12 +267,15 @@ for (const seg of segments(prepared)) {
   // `git checkout .` / `git checkout -- .` and `git restore .` (worktree). A
   // targeted path (`git checkout -- file`) or a staged-only restore
   // (`git restore --staged .`, which only unstages and loses no work) stays fine.
+  // The current-directory pathspec, written `.` or `./` - both discard the whole
+  // (sub)tree; a named path like `./file` or `path/to/file` stays targeted.
+  const isCwdPathspec = (a) => a === "." || a === "./";
   const coArgs = afterGitSub(seg, "checkout");
-  if (coArgs && coArgs.includes(".")) {
+  if (coArgs && coArgs.some(isCwdPathspec)) {
     block(`Repo-wide 'git checkout .' discards all uncommitted working-tree changes with no undo and requires explicit user authorization.`);
   }
   const restoreArgs = afterGitSub(seg, "restore");
-  if (restoreArgs && restoreArgs.includes(".")) {
+  if (restoreArgs && restoreArgs.some(isCwdPathspec)) {
     const staged = restoreArgs.some((a) => a === "--staged" || (isShort(a) && a.includes("S")));
     const worktree = restoreArgs.some((a) => a === "--worktree" || (isShort(a) && a.includes("W")));
     // The default target when neither flag is present is the working tree.
