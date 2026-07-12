@@ -9,6 +9,8 @@ This project follows the dienstweg task workflow. Project values live in `dienst
 - **create-issue** `<topic>` - create a new issue following the schema (interference check + collaborative plan drafting). Creates ONLY the backlog issue.
 - **start-task** `{{issuePrefix}}-XXX` - worktree + plan in the issue description + ready-to-run `/goal` condition. Implementation happens only in the `/goal` loop.
 
+**Codex delegation mode (Claude Code harness only):** `/start-task {{issuePrefix}}-XXX --codex` - or the optional config key `delegation.implementer: "codex"` in `dienstweg.config.json`, which sets the default (the flag wins) - makes the subsequent `/goal` loop delegate the implementation steps to the `codex:codex-rescue` subagent while Claude keeps orchestrating, reviewing, and merging. Preflight before planning: the openai-codex plugin must report ready (`codex-companion.mjs setup --json` -> `ready: true`), otherwise start-task stops and points to `/codex:setup`. The ensemble review becomes 2x Claude + 1x Codex: the Codex reviewer runs read-only (`adversarial-review`) with the `adversarial` stance; `spec-conformance` (Plan/AC check + issue reference) and `maintainer` stay on the Claude reviewers. Fallback: a failed delegation gets exactly one retry via `--resume`, after which Claude implements the step itself and records the fallback as an issue comment. The Codex-harness start-task skill does not have this mode.
+
 **Git conventions:**
 
 - Base branch: `{{baseBranch}}`. Feature branches: `tasks/{{issuePrefixLower}}-XXX-<slug>`.
