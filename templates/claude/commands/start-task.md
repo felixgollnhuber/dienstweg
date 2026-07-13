@@ -1,6 +1,6 @@
 ---
 description: Prepare a Linear issue for implementation - worktree + plan + ready-to-run /goal condition
-argument-hint: <ISSUE-IDENTIFIER> [--codex] (e.g. 123 or PREFIX-123)
+argument-hint: <ISSUE-IDENTIFIER> [--codex|--no-codex] (e.g. 123 or PREFIX-123)
 ---
 
 You are preparing the Linear issue `$ARGUMENTS` for implementation. Goal: worktree + a comprehensive plan in the Linear issue description (section `## Plan`), so that `/goal` can afterwards work through it without further questions.
@@ -11,7 +11,16 @@ You are preparing the Linear issue `$ARGUMENTS` for implementation. Goal: worktr
 - Read `dienstweg.local.md` if it exists - its rules apply in addition to this command.
 - Respond to the user in `config.language`.
 - Use the Linear MCP tools (`get_issue`, `save_issue`, `list_issues`, ... - the tool prefix depends on the installed Linear MCP server).
-- **Codex delegation mode detection:** the mode is ON when `$ARGUMENTS` contains the `--codex` flag OR the optional config key `config.delegation.implementer` equals `"codex"`. The flag wins over the config; the config key only sets the default and may be absent entirely. Strip the flag from `$ARGUMENTS` before normalizing the issue identifier. When the mode is OFF (no flag, no config key), this command behaves exactly as before - skip every "codex mode" block below.
+- **Codex delegation mode detection:** the mode is ON when `$ARGUMENTS` contains the `--codex` flag OR the optional config key `config.delegation.implementer` equals `"codex"`. A flag wins over the config: `--codex` forces the mode ON, `--no-codex` forces it OFF for this run even when the config sets the default. The config key only sets the default and may be absent entirely. Strip both flags from `$ARGUMENTS` before normalizing the issue identifier. When the mode is OFF, this command behaves exactly as before - skip every "codex mode" block below.
+
+## Step 0a - Codex preflight (codex mode only)
+
+Skip this step entirely when codex mode is OFF. It runs BEFORE the issue is loaded or claimed - a failed preflight must not leave the issue stranded In Progress. Verify the openai-codex plugin is ready (read-only check, no repo or Linear mutation):
+
+1. Resolve the companion script via glob: `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If several versions match, take the highest semver (numeric compare - plain lexicographic sorting would put 1.0.9 above 1.0.10). Never hardcode a version - the plugin cache path is versioned.
+2. Run `node <companion> setup --json` and parse the JSON output.
+3. `ready: true` -> log the resolved companion path and continue (the /goal condition in step 6 references this companion; re-resolve the glob at use time if the remembered path has vanished, e.g. after a plugin update mid-task).
+4. Anything else (no glob match, non-zero exit, `ready: false`) -> STOP: report what failed and point the user to `/codex:setup`. Do not silently fall back to normal mode - the user explicitly asked for delegation.
 
 ## Step 1 - Load the issue
 
@@ -21,15 +30,6 @@ You are preparing the Linear issue `$ARGUMENTS` for implementation. Goal: worktr
 - Check the parallelism labels (`parallel-safe`, `single-writer:<area>`) and log them briefly.
 - If the description is empty or missing the template: create the skeleton from the issue description template (in the dienstweg block in AGENTS.md), derive AC + DoD from the issue title, and present it to the user for approval before step 5.
 - **Claim now** (before planning, to close the single-writer race window): `save_issue state="In Progress" assignee="me"`. This is a plain mutation done before plan mode, not inside it. If the issue is already `In Progress` and assigned to someone else, STOP and ask.
-
-## Step 1a - Codex preflight (codex mode only)
-
-Skip this step entirely when codex mode is OFF. Before any planning, verify the openai-codex plugin is ready (read-only check, no repo mutation):
-
-1. Resolve the companion script via glob: `~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`. If several versions match, take the highest version directory. Never hardcode a version - the plugin cache path is versioned.
-2. Run `node <companion> setup --json` and parse the JSON output.
-3. `ready: true` -> log the resolved companion path and continue (remember the path; the /goal condition in step 6 references it).
-4. Anything else (no glob match, non-zero exit, `ready: false`) -> STOP: report what failed and point the user to `/codex:setup`. Do not silently fall back to normal mode - the user explicitly asked for delegation.
 
 ## Step 2 - Ensure the worktree
 
@@ -103,6 +103,8 @@ The plan must be `/goal`-ready. It will go into the Linear issue description's `
 - Commit prefix: `<issuePrefix>-XXX - <short>`
 ```
 
+In codex mode, the plan's `### DoD gates` section must state the delegation and the review mix (`<ensembleSize minus 1>x Claude + 1x Codex` instead of the plain `<ensembleSize>x` review line) - otherwise the spec-conformance reviewer's Plan/AC check and the composed condition disagree.
+
 **Touch points are amendable mid-task.** The `## Plan` block is not frozen at approval. If the `/goal` loop later finds it insufficient, it uses the **amendment move** (defined in the AGENTS block): append an `### Amendments` sub-section to `## Plan` via `save_issue`, each entry recording reason, new touch points, and a LOC estimate. Autonomous only while the amendments add `<=2` new non-high-risk touch points in total (a touch point is any file that must change but was not in the original plan, created or edited); once they add more than 2, or any high-risk area (`config.areas.highRisk`), stop and ask first. That is why the `/goal` file-scope constraint below reads "amended plan" - a recorded amendment is not a violation, whereas a genuine scope change still means ask or a follow-up issue.
 
 ## Step 6 - Compose the /goal condition
@@ -117,8 +119,10 @@ The `/goal` command (Claude Code v2.1.139+) is a session-scoped stop hook: after
 
 **Codex delegation mode (only when codex mode is ON):** adjust the composed condition in exactly two places - everything else stays identical:
 
-1. **Implementation clause:** replace `all implementation steps from that ## Plan block done` with: `all implementation steps from that ## Plan block done by delegating each step to the codex:codex-rescue subagent - every delegation prompt self-contained: the step itself, the plan's touch points, and the loop constraints (no --no-verify, no force push, no files outside the amended plan's touch points) - fallback rule: a failed delegation gets exactly one retry via --resume, after which Claude implements the step itself and documents the fallback as an issue comment`.
-2. **Review clause:** replace `<config.review.ensembleSize> parallel review subagents in ONE message` with: `2x Claude + 1x Codex - <ensembleSize minus 1> parallel Claude review subagents plus the Codex reviewer started in the SAME message via node <companion resolved in step 1a> adversarial-review --wait --base <config.git.baseBranch> --scope branch (read-only, structured review schema); the Codex reviewer takes the adversarial stance, the spec-conformance stance (issue reference + diff checked against ## Plan and ## Acceptance Criteria) and the maintainer stance go to the Claude reviewers`. If `config.review.stances` deviates from the default set, the Codex reviewer still takes `adversarial` when present (otherwise the first stance) and the remaining stances go round-robin to the Claude reviewers - a configured `spec-conformance` stance must always land on a Claude reviewer.
+1. **Implementation clause:** replace `all implementation steps from that ## Plan block done` with: `all implementation steps from that ## Plan block done by delegating each step to the codex:codex-rescue subagent - every delegation prompt self-contained: the step itself, the plan's touch points, and the full loop constraints (no --no-verify, no hook bypass, no push to protected branches, no force push, <config.extraConstraints - omit if empty>, no files outside the amended plan's touch points; the delegate never sees this condition, so restate them verbatim) - fallback rule: a failed delegation gets exactly one retry via --resume (re-delegate resuming the failed Codex session instead of starting fresh), after which Claude implements the step itself and documents the fallback as an issue comment`.
+2. **Review clause:** replace `<config.review.ensembleSize> parallel review subagents in ONE message, identical broad scope, each assigned one distinct stance from config.review.stances round-robin - and when a spec-conformance stance is configured, the reviewer assigned it also given the issue reference and checking the diff against ## Plan and ## Acceptance Criteria` with: `<ensembleSize minus 1>x Claude + 1x Codex (default ensembleSize 3: 2x Claude + 1x Codex) - <ensembleSize minus 1> parallel Claude review subagents plus the Codex reviewer started in the SAME message via node <companion from step 0a> adversarial-review --wait --base <config.git.baseBranch> --scope branch (read-only, structured review schema; if --wait would exceed the shell timeout, poll the companion's status command instead), identical broad scope for every reviewer; the Codex reviewer takes the adversarial stance, the spec-conformance stance (issue reference + diff checked against ## Plan and ## Acceptance Criteria) and the maintainer stance go to the Claude reviewers`. If `config.review.stances` deviates from the default set, the Codex reviewer takes `adversarial` when present, otherwise the first stance that is not `spec-conformance`; the remaining stances go round-robin to the Claude reviewers - a configured `spec-conformance` stance must always land on a Claude reviewer, and with fewer Claude reviewers than remaining stances, stack multiple stances on one Claude reviewer rather than dropping any.
+
+The two substitutions add roughly 850 characters: in codex mode the composed condition can approach the ~3500-char guidance once high-risk/single-writer/extraConstraints additions apply - trim descriptive filler first, never the load-bearing clauses; slightly exceeding the guidance beats dropping a gate.
 
 In the synthesis, treat the Codex reviewer's structured findings exactly like a Claude subagent report (consensus >=2 fixed directly, singletons judged, conflicts decided). The delegation itself changes nothing about merge gates, DoD boxes, or the Linear close-out - Claude remains the orchestrator and accountable for every gate.
 
