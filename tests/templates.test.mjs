@@ -55,7 +55,7 @@ test("claude start-task codex-mode /goal condition delegates to codex:codex-resc
   assert.match(claudeStartTask, /the plan's touch points/);
   assert.match(
     claudeStartTask,
-    /no --no-verify, no hook bypass, no push to protected branches, no force push, <config\.extraConstraints - omit if empty>, no files outside the amended plan's touch points/
+    /no --no-verify, no hook bypass, no push to protected branches, no force push, <config\.extraConstraints, comma-joined - omit if empty>, no files outside the amended plan's touch points, plus any high-risk \/ single-writer additions/
   );
   assert.match(claudeStartTask, /exactly one retry via --resume/);
   assert.match(claudeStartTask, /documents the fallback as an issue comment/);
@@ -71,6 +71,7 @@ test("claude start-task codex-mode review mix swaps one reviewer for Codex", () 
   assert.match(claudeStartTask, /the Codex reviewer takes the adversarial stance/);
   assert.match(claudeStartTask, /first stance that is not `spec-conformance`/);
   assert.match(claudeStartTask, /`spec-conformance` stance must always land on a Claude reviewer/);
+  assert.match(claudeStartTask, /requires `ensembleSize >= 2`/);
 });
 
 test("default /goal condition block stays codex-free", () => {
